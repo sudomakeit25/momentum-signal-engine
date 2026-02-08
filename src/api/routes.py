@@ -138,6 +138,52 @@ def _safe_round(val, decimals=2):
     return round(float(val), decimals)
 
 
+@router.get("/breadth")
+def market_breadth():
+    """Market breadth: bullish vs bearish stock count."""
+    symbols = get_default_universe()
+    bars_map = client.get_multi_bars(symbols, days=200)
+
+    bullish = 0
+    bearish = 0
+    neutral = 0
+    above_ema21 = 0
+    total = 0
+
+    for symbol, df in bars_map.items():
+        if len(df) < 50:
+            continue
+        total += 1
+        try:
+            df = add_all_indicators(df)
+            last = df.iloc[-1]
+            ema9 = last.get("ema9", 0)
+            ema21 = last.get("ema21", 0)
+            close = last["close"]
+
+            if close > ema21:
+                above_ema21 += 1
+
+            if ema9 > ema21:
+                bullish += 1
+            elif ema9 < ema21:
+                bearish += 1
+            else:
+                neutral += 1
+        except Exception:
+            continue
+
+    return {
+        "total": total,
+        "bullish": bullish,
+        "bearish": bearish,
+        "neutral": neutral,
+        "above_ema21": above_ema21,
+        "bullish_pct": round(bullish / total * 100, 1) if total > 0 else 0,
+        "above_ema21_pct": round(above_ema21 / total * 100, 1) if total > 0 else 0,
+    }
+
+
 @router.get("/backtest", response_model=BacktestResult)
 def backtest(
     symbol: str = Query(default="SPY"),

@@ -26,13 +26,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-zinc-950 text-zinc-100`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         <Providers>
           <Sidebar />
-          <main className="ml-60 min-h-screen p-6">{children}</main>
+          <main className="min-h-screen p-4 pt-18 md:ml-60 md:p-6 md:pt-6">{children}</main>
         </Providers>
       </body>
     </html>

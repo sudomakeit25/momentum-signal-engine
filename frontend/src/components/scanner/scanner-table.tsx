@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Star } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -20,12 +21,21 @@ function formatVolume(vol: number): string {
   return vol.toString();
 }
 
-export function ScannerTable({ results }: { results: ScanResult[] }) {
+export function ScannerTable({
+  results,
+  isWatched,
+  onToggleWatch,
+}: {
+  results: ScanResult[];
+  isWatched?: (symbol: string) => boolean;
+  onToggleWatch?: (symbol: string) => void;
+}) {
   return (
-    <div className="rounded-lg border border-zinc-800">
+    <div className="overflow-x-auto rounded-lg border border-zinc-800">
       <Table>
         <TableHeader>
           <TableRow className="border-zinc-800 hover:bg-transparent">
+            <TableHead className="w-8 text-zinc-400"></TableHead>
             <TableHead className="w-12 text-zinc-400">#</TableHead>
             <TableHead className="text-zinc-400">Symbol</TableHead>
             <TableHead className="text-right text-zinc-400">Price</TableHead>
@@ -44,6 +54,15 @@ export function ScannerTable({ results }: { results: ScanResult[] }) {
               key={r.symbol}
               className="border-zinc-800 hover:bg-zinc-900/50"
             >
+              <TableCell className="px-2">
+                {onToggleWatch && (
+                  <button onClick={() => onToggleWatch(r.symbol)} className="text-zinc-500 hover:text-yellow-400">
+                    <Star
+                      className={`h-3.5 w-3.5 ${isWatched?.(r.symbol) ? "fill-yellow-400 text-yellow-400" : ""}`}
+                    />
+                  </button>
+                )}
+              </TableCell>
               <TableCell className="font-mono text-xs text-zinc-500">
                 {i + 1}
               </TableCell>

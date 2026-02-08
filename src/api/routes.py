@@ -10,7 +10,7 @@ from src.data.models import BacktestResult, ChartBar, ChartData, PositionSize, S
 from src.risk.position_sizer import calculate_position_size
 from src.scanner.screener import get_default_universe, scan_universe
 from src.signals.generator import generate_signals
-from src.signals.indicators import add_all_indicators, vwap
+from src.signals.indicators import add_all_indicators, relative_strength_vs_spy, vwap
 from src.signals.patterns import detect_patterns
 
 router = APIRouter()
@@ -105,6 +105,15 @@ def chart_data(
     vwap_series = vwap(df)
     df["vwap_val"] = vwap_series
 
+    # Compute relative strength vs SPY
+    try:
+        spy_df = client.get_bars("SPY", days=days)
+        if len(df) >= 20 and len(spy_df) >= 20:
+            rs = relative_strength_vs_spy(df["close"], spy_df["close"], 20)
+            df["rs_vs_spy"] = rs
+    except Exception:
+        pass
+
     bars = []
     for idx, row in df.iterrows():
         ts = idx.to_pydatetime() if hasattr(idx, "to_pydatetime") else idx
@@ -126,6 +135,7 @@ def chart_data(
             atr=_safe_round(row.get("atr")),
             volume_sma20=_safe_round(row.get("volume_sma20")),
             vwap=_safe_round(row.get("vwap_val")),
+            rs_vs_spy=_safe_round(row.get("rs_vs_spy"), 3),
         ))
 
     signals = generate_signals(df, symbol)
@@ -254,3 +264,237 @@ def position_size(
 ):
     """Calculate position size."""
     return calculate_position_size(account, risk, entry, stop, target)
+
+
+
+@router.get("/correlation")
+def correlation_matrix(
+    symbols: str = Query(default="AAPL,MSFT,GOOGL,AMZN,NVDA,META,TSLA,AMD,JPM,XOM"),
+    days: int = Query(default=90, ge=30, le=365),
+):
+    """Compute correlation matrix for a set of symbols."""
+    sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    bars_map = client.get_multi_bars(sym_list, days=days)
+
+    # Build a DataFrame of daily closes
+    closes = {}
+    for sym in sym_list:
+        if sym in bars_map and len(bars_map[sym]) > 20:
+            closes[sym] = bars_map[sym]["close"]
+    if len(closes) < 2:
+        return {"symbols": [], "matrix": []}
+
+    df = pd.DataFrame(closes).dropna()
+    returns = df.pct_change().dropna()
+    corr = returns.corr()
+
+    syms = list(corr.columns)
+    matrix = []
+    for s1 in syms:
+        row = []
+        for s2 in syms:
+            row.append(round(float(corr.loc[s1, s2]), 3))
+        matrix.append(row)
+
+    return {"symbols": syms, "matrix": matrix}
+
+
+@router.get("/risk-report")
+def daily_risk_report():
+    """Daily risk report: portfolio exposure and signal summary."""
+    try:
+        from alpaca.trading.client import TradingClient
+        from config.settings import settings
+        tc = TradingClient(settings.alpaca_api_key, settings.alpaca_secret_key, paper=True)
+        positions = tc.get_all_positions()
+        account = tc.get_account()
+
+        total_exposure = sum(abs(float(p.market_value)) for p in positions)
+        equity = float(account.equity)
+        cash = float(account.cash)
+
+        long_exposure = sum(float(p.market_value) for p in positions if float(p.market_value) > 0)
+        short_exposure = abs(sum(float(p.market_value) for p in positions if float(p.market_value) < 0))
+        unrealized_pl = sum(float(p.unrealized_pl) for p in positions)
+
+        position_list = []
+        for p in positions:
+            mv = float(p.market_value)
+            pct = (mv / equity * 100) if equity > 0 else 0
+            position_list.append({
+                "symbol": p.symbol,
+                "market_value": mv,
+                "pct_of_portfolio": round(pct, 1),
+                "unrealized_pl": float(p.unrealized_pl),
+                "unrealized_plpc": float(p.unrealized_plpc) * 100,
+            })
+        position_list.sort(key=lambda x: abs(x["pct_of_portfolio"]), reverse=True)
+
+        return {
+            "equity": equity,
+            "cash": cash,
+            "total_exposure": total_exposure,
+            "long_exposure": long_exposure,
+            "short_exposure": short_exposure,
+            "exposure_pct": round(total_exposure / equity * 100, 1) if equity > 0 else 0,
+            "cash_pct": round(cash / equity * 100, 1) if equity > 0 else 0,
+            "unrealized_pl": round(unrealized_pl, 2),
+            "position_count": len(positions),
+            "positions": position_list,
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "equity": 0, "cash": 0, "total_exposure": 0,
+            "long_exposure": 0, "short_exposure": 0,
+            "exposure_pct": 0, "cash_pct": 0,
+            "unrealized_pl": 0, "position_count": 0,
+            "positions": [],
+        }
+
+
+@router.get("/portfolio")
+def portfolio():
+    """Get open positions from Alpaca paper account."""
+    try:
+        from alpaca.trading.client import TradingClient
+        from config.settings import settings
+        tc = TradingClient(settings.alpaca_api_key, settings.alpaca_secret_key, paper=True)
+        positions = tc.get_all_positions()
+        account = tc.get_account()
+        return {
+            "equity": float(account.equity),
+            "cash": float(account.cash),
+            "buying_power": float(account.buying_power),
+            "positions": [
+                {
+                    "symbol": p.symbol,
+                    "qty": float(p.qty),
+                    "avg_entry": float(p.avg_entry_price),
+                    "current_price": float(p.current_price),
+                    "market_value": float(p.market_value),
+                    "unrealized_pl": float(p.unrealized_pl),
+                    "unrealized_plpc": float(p.unrealized_plpc) * 100,
+                    "side": p.side.value,
+                }
+                for p in positions
+            ],
+        }
+    except Exception as e:
+        return {"error": str(e), "equity": 0, "cash": 0, "buying_power": 0, "positions": []}
+
+
+@router.post("/webhook/test")
+def test_webhook(
+    url: str = Query(...),
+    platform: str = Query(default="discord"),
+):
+    """Test a webhook URL by sending a sample message."""
+    import requests as http_requests
+    try:
+        if platform == "discord":
+            payload = {
+                "embeds": [{
+                    "title": "MSE Signal Alert (Test)",
+                    "description": "This is a test message from Momentum Signal Engine.",
+                    "color": 3447003,
+                    "fields": [
+                        {"name": "Symbol", "value": "AAPL", "inline": True},
+                        {"name": "Action", "value": "BUY", "inline": True},
+                        {"name": "Confidence", "value": "75%", "inline": True},
+                    ],
+                }]
+            }
+            resp = http_requests.post(url, json=payload, timeout=10)
+        elif platform == "telegram":
+            # URL format: https://api.telegram.org/bot<TOKEN>/sendMessage
+            # chat_id passed as a second query param
+            payload = {
+                "text": "*MSE Signal Alert (Test)*\nSymbol: AAPL\nAction: BUY\nConfidence: 75%",
+                "parse_mode": "Markdown",
+            }
+            resp = http_requests.post(url, json=payload, timeout=10)
+        else:
+            # Generic webhook
+            payload = {
+                "text": "MSE Signal Alert (Test) - AAPL BUY @ 75% confidence",
+            }
+            resp = http_requests.post(url, json=payload, timeout=10)
+
+        return {"status": "sent", "http_status": resp.status_code}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/webhook/notify")
+def notify_signals(
+    url: str = Query(...),
+    platform: str = Query(default="discord"),
+    top: int = Query(default=5, ge=1, le=20),
+):
+    """Send current top signals to a webhook."""
+    import requests as http_requests
+    symbols = get_default_universe()
+    all_signals = []
+    bars_map = client.get_multi_bars(symbols, days=200)
+    for symbol, df in bars_map.items():
+        if len(df) < 50:
+            continue
+        try:
+            sigs = generate_signals(df, symbol)
+            all_signals.extend(sigs)
+        except Exception:
+            continue
+    all_signals.sort(key=lambda s: s.confidence, reverse=True)
+    top_signals = all_signals[:top]
+
+    if not top_signals:
+        return {"status": "no_signals"}
+
+    try:
+        if platform == "discord":
+            fields = []
+            for s in top_signals:
+                emoji = "\U0001f7e2" if s.action.value == "BUY" else "\U0001f534"
+                fields.append({
+                    "name": f"{emoji} {s.symbol} — {s.action.value}",
+                    "value": f"Entry: ${s.entry:.2f} | Conf: {s.confidence*100:.0f}%\n{s.reason[:80]}",
+                    "inline": False,
+                })
+            payload = {"embeds": [{"title": "MSE Signal Alerts", "color": 3447003, "fields": fields}]}
+            resp = http_requests.post(url, json=payload, timeout=10)
+        else:
+            lines = ["*MSE Signal Alerts*\n"]
+            for s in top_signals:
+                emoji = "\U0001f7e2" if s.action.value == "BUY" else "\U0001f534"
+                lines.append(f"{emoji} *{s.symbol}* {s.action.value} @ ${s.entry:.2f} ({s.confidence*100:.0f}%)")
+            payload = {"text": "\n".join(lines), "parse_mode": "Markdown"} if platform == "telegram" else {"text": "\n".join(lines)}
+            resp = http_requests.post(url, json=payload, timeout=10)
+
+        return {"status": "sent", "signals_count": len(top_signals), "http_status": resp.status_code}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/trade")
+def place_trade(
+    symbol: str = Query(...),
+    qty: int = Query(..., ge=1),
+    side: str = Query(...),
+):
+    """Place a paper trade via Alpaca."""
+    try:
+        from alpaca.trading.client import TradingClient
+        from alpaca.trading.requests import MarketOrderRequest
+        from alpaca.trading.enums import OrderSide, TimeInForce
+        from config.settings import settings
+        tc = TradingClient(settings.alpaca_api_key, settings.alpaca_secret_key, paper=True)
+        order = tc.submit_order(MarketOrderRequest(
+            symbol=symbol.upper(),
+            qty=qty,
+            side=OrderSide.BUY if side.upper() == "BUY" else OrderSide.SELL,
+            time_in_force=TimeInForce.DAY,
+        ))
+        return {"status": "submitted", "order_id": str(order.id), "symbol": order.symbol}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

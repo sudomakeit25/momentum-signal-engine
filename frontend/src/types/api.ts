@@ -89,6 +89,7 @@ export interface ChartBar {
   atr: number | null;
   volume_sma20: number | null;
   vwap: number | null;
+  rs_vs_spy: number | null;
 }
 
 export interface ChartData {

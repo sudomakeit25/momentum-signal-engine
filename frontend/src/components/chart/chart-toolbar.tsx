@@ -18,6 +18,7 @@ interface ChartToolbarProps {
     ema50: boolean;
     ema200: boolean;
     vwap: boolean;
+    rs: boolean;
   };
   onIndicatorToggle: (key: string, val: boolean) => void;
 }
@@ -103,6 +104,7 @@ export function ChartToolbar({
           { key: "ema50", label: "EMA50", color: "text-orange-400" },
           { key: "ema200", label: "EMA200", color: "text-red-400" },
           { key: "vwap", label: "VWAP", color: "text-purple-400" },
+          { key: "rs", label: "RS", color: "text-pink-400" },
         ].map(({ key, label, color }) => (
           <div key={key} className="flex items-center gap-1">
             <Switch

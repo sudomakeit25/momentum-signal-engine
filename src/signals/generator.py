@@ -22,6 +22,25 @@ from src.signals.indicators import (
 )
 
 
+def _weekly_trend(df: pd.DataFrame) -> str:
+    """Check weekly trend using resampled data. Returns 'bullish', 'bearish', or 'neutral'."""
+    if len(df) < 50:
+        return "neutral"
+    try:
+        weekly = df.resample("W").agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}).dropna()
+        if len(weekly) < 10:
+            return "neutral"
+        ema9w = ema(weekly["close"], 9)
+        ema21w = ema(weekly["close"], 21)
+        if ema9w.iloc[-1] > ema21w.iloc[-1]:
+            return "bullish"
+        elif ema9w.iloc[-1] < ema21w.iloc[-1]:
+            return "bearish"
+    except Exception:
+        pass
+    return "neutral"
+
+
 def generate_signals(df: pd.DataFrame, symbol: str) -> list[Signal]:
     """Generate buy and sell signals for a stock.
 
@@ -36,8 +55,26 @@ def generate_signals(df: pd.DataFrame, symbol: str) -> list[Signal]:
         return []
 
     df = add_all_indicators(df)
+    weekly = _weekly_trend(df)
     buys = _buy_signals(df, symbol)
     sells = _sell_signals(df, symbol)
+
+    # Multi-timeframe boost: increase confidence when weekly trend aligns
+    for sig in buys:
+        if weekly == "bullish":
+            sig.confidence = min(sig.confidence + 0.05, 0.95)
+            sig.reason += " (weekly trend confirms)"
+        elif weekly == "bearish":
+            sig.confidence = max(sig.confidence - 0.10, 0.20)
+            sig.reason += " (caution: weekly trend bearish)"
+
+    for sig in sells:
+        if weekly == "bearish":
+            sig.confidence = min(sig.confidence + 0.05, 0.95)
+            sig.reason += " (weekly trend confirms)"
+        elif weekly == "bullish":
+            sig.confidence = max(sig.confidence - 0.10, 0.20)
+            sig.reason += " (caution: weekly trend bullish)"
 
     # Resolve conflicts: if both buy and sell fire, keep the higher-confidence side
     if buys and sells:

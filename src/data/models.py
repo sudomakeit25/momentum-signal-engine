@@ -91,6 +91,7 @@ class ChartBar(BaseModel):
     atr: float | None = None
     volume_sma20: float | None = None
     vwap: float | None = None
+    rs_vs_spy: float | None = None
 
 
 class ChartData(BaseModel):

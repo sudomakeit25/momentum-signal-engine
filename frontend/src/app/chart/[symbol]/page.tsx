@@ -22,6 +22,7 @@ export default function ChartPage() {
     ema50: false,
     ema200: false,
     vwap: false,
+    rs: false,
   });
 
   const { data: chartData, isLoading } = useChartData(symbol, days);
@@ -65,6 +66,7 @@ export default function ChartPage() {
               showEma50={indicators.ema50}
               showEma200={indicators.ema200}
               showVwap={indicators.vwap}
+              showRs={indicators.rs}
             />
           </div>
 

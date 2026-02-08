@@ -9,6 +9,7 @@ import {
   CandlestickChart,
   Calculator,
   BarChart3,
+  BarChart2,
   Activity,
   BookOpen,
   Sun,
@@ -18,6 +19,13 @@ import {
   LayoutGrid,
   Eye,
   TrendingUp,
+  Wallet,
+  Bell,
+  History,
+  Grid3x3,
+  ShieldAlert,
+  Calendar,
+  Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,10 +33,18 @@ const NAV_ITEMS = [
   { href: "/scanner", label: "Scanner", icon: ScanSearch },
   { href: "/watchlist", label: "Watchlist", icon: Eye },
   { href: "/chart/SPY", label: "Charts", icon: CandlestickChart },
+  { href: "/portfolio", label: "Portfolio", icon: Wallet },
+  { href: "/alerts", label: "Price Alerts", icon: Bell },
+  { href: "/signals-history", label: "Signal History", icon: History },
+  { href: "/performance", label: "Performance", icon: BarChart2 },
   { href: "/position-sizer", label: "Position Sizer", icon: Calculator },
   { href: "/backtest", label: "Backtest", icon: BarChart3 },
   { href: "/heatmap", label: "Heatmap", icon: LayoutGrid },
   { href: "/sectors", label: "Sectors", icon: TrendingUp },
+  { href: "/correlation", label: "Correlation", icon: Grid3x3 },
+  { href: "/risk-report", label: "Risk Report", icon: ShieldAlert },
+  { href: "/earnings", label: "Earnings", icon: Calendar },
+  { href: "/notifications", label: "Notifications", icon: Send },
   { href: "/guide", label: "Guide", icon: BookOpen },
 ];
 
@@ -70,7 +86,7 @@ export function Sidebar() {
           </span>
         </div>
 
-        <nav className="flex-1 space-y-1 p-3">
+        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {NAV_ITEMS.map((item) => {
             const isActive =
               pathname === item.href || pathname.startsWith(item.href.split("/").slice(0, 2).join("/"));

@@ -20,6 +20,7 @@ interface CandlestickChartProps {
   showEma50?: boolean;
   showEma200?: boolean;
   showVwap?: boolean;
+  showRs?: boolean;
 }
 
 function toTime(ts: string): Time {
@@ -34,6 +35,7 @@ export function CandlestickChart({
   showEma50 = false,
   showEma200 = false,
   showVwap = false,
+  showRs = false,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -107,6 +109,29 @@ export function CandlestickChart({
     addLine(bars.map((b) => b.ema200), "#ef4444", showEma200);
     addLine(bars.map((b) => b.vwap), "#a855f7", showVwap);
 
+    // RS vs SPY overlay (separate price scale)
+    if (showRs) {
+      const rsSeries = chart.addSeries(LineSeries, {
+        color: "#ec4899",
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        priceScaleId: "rs",
+        title: "RS",
+      });
+      chart.priceScale("rs").applyOptions({
+        scaleMargins: { top: 0.7, bottom: 0 },
+      });
+      const rsData = bars
+        .map((b) =>
+          b.rs_vs_spy !== null
+            ? { time: toTime(b.timestamp), value: b.rs_vs_spy }
+            : null
+        )
+        .filter((d): d is { time: Time; value: number } => d !== null);
+      rsSeries.setData(rsData);
+    }
+
     // Signal markers as price lines on the candlestick series
     for (const s of signals) {
       candleSeries.createPriceLine({
@@ -132,7 +157,7 @@ export function CandlestickChart({
       window.removeEventListener("resize", handleResize);
       chart.remove();
     };
-  }, [bars, signals, showEma9, showEma21, showEma50, showEma200, showVwap]);
+  }, [bars, signals, showEma9, showEma21, showEma50, showEma200, showVwap, showRs]);
 
   return <div ref={containerRef} className="w-full" />;
 }

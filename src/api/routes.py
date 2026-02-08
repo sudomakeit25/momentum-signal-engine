@@ -6,7 +6,11 @@ from src.backtest.engine import run_backtest
 from src.data import client
 import pandas as pd
 
-from src.data.models import BacktestResult, ChartBar, ChartData, PositionSize, ScanResult, Signal
+from src.data.models import (
+    BacktestResult, ChartBar, ChartData, ChartPattern, PositionSize,
+    PriceProjection, ScanResult, Signal, SupportResistanceLevel,
+    TechnicalAnalysis, TrendLine,
+)
 from src.risk.position_sizer import calculate_position_size
 from src.scanner.screener import get_default_universe, scan_universe
 from src.signals.generator import generate_signals
@@ -139,13 +143,84 @@ def chart_data(
         ))
 
     signals = generate_signals(df, symbol)
-    return ChartData(symbol=symbol, bars=bars, signals=signals)
+
+    # Technical analysis
+    technical_analysis = None
+    if len(df) >= 60:
+        technical_analysis = _compute_technical_analysis(df)
+
+    return ChartData(symbol=symbol, bars=bars, signals=signals, technical_analysis=technical_analysis)
 
 
 def _safe_round(val, decimals=2):
     if val is None or (isinstance(val, float) and pd.isna(val)):
         return None
     return round(float(val), decimals)
+
+
+def _compute_technical_analysis(df: pd.DataFrame) -> TechnicalAnalysis:
+    """Run all technical analysis: S/R, trendlines, patterns, projections."""
+    from src.signals.support_resistance import detect_support_resistance
+    from src.signals.trendlines import analyze_trendlines
+    from src.signals.chart_patterns import detect_all_patterns
+    from src.signals.price_projection import project_price_zones
+
+    # Support/Resistance
+    sr = detect_support_resistance(df)
+    support_levels = [SupportResistanceLevel(**s) for s in sr.get("support", [])]
+    resistance_levels = [SupportResistanceLevel(**r) for r in sr.get("resistance", [])]
+
+    # Trendlines
+    tl_analysis = analyze_trendlines(df)
+    trendlines = []
+    for t in tl_analysis.get("uptrends", []) + tl_analysis.get("downtrends", []):
+        ts_start = t["start_time"]
+        ts_end = t["end_time"]
+        if hasattr(ts_start, "to_pydatetime"):
+            ts_start = ts_start.to_pydatetime()
+        if hasattr(ts_end, "to_pydatetime"):
+            ts_end = ts_end.to_pydatetime()
+        trendlines.append(TrendLine(
+            start_time=ts_start,
+            start_price=round(t["start_price"], 2),
+            end_time=ts_end,
+            end_price=round(t["end_price"], 2),
+            touches=t["touches"],
+            trend_type=t["trend_type"],
+            projection=t.get("projection", []),
+        ))
+
+    # Chart patterns
+    raw_patterns = detect_all_patterns(df)
+    patterns = [ChartPattern(**p) for p in raw_patterns]
+
+    # Price projections
+    raw_projections = project_price_zones(df, raw_patterns, tl_analysis)
+    projections = [PriceProjection(**p) for p in raw_projections]
+
+    # Trend summary
+    dominant = tl_analysis.get("dominant_trend", "neutral")
+    pattern_names = [p.pattern_type.replace("_", " ").title() for p in patterns]
+    if pattern_names:
+        summary = f"Trend: {dominant.title()}. Patterns detected: {', '.join(pattern_names)}."
+    elif dominant != "neutral":
+        summary = f"Trend: {dominant.title()}. No major chart patterns detected."
+    else:
+        summary = "Trend: Neutral/consolidating. No clear directional bias."
+
+    if support_levels:
+        summary += f" Key support at ${support_levels[0].price:.2f}."
+    if resistance_levels:
+        summary += f" Key resistance at ${resistance_levels[0].price:.2f}."
+
+    return TechnicalAnalysis(
+        support_levels=support_levels,
+        resistance_levels=resistance_levels,
+        trendlines=trendlines,
+        patterns=patterns,
+        projections=projections,
+        trend_summary=summary,
+    )
 
 
 SECTOR_MAP = {

@@ -10,7 +10,7 @@ import {
   type IChartApi,
   type Time,
 } from "lightweight-charts";
-import type { ChartBar, Signal } from "@/types/api";
+import type { ChartBar, Signal, TechnicalAnalysis } from "@/types/api";
 
 interface CandlestickChartProps {
   bars: ChartBar[];
@@ -21,6 +21,11 @@ interface CandlestickChartProps {
   showEma200?: boolean;
   showVwap?: boolean;
   showRs?: boolean;
+  technicalAnalysis?: TechnicalAnalysis | null;
+  showSupportResistance?: boolean;
+  showTrendlines?: boolean;
+  showPatterns?: boolean;
+  showProjections?: boolean;
 }
 
 function toTime(ts: string): Time {
@@ -36,6 +41,11 @@ export function CandlestickChart({
   showEma200 = false,
   showVwap = false,
   showRs = false,
+  technicalAnalysis,
+  showSupportResistance = false,
+  showTrendlines = false,
+  showPatterns = false,
+  showProjections = false,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -144,6 +154,121 @@ export function CandlestickChart({
       });
     }
 
+    // --- Technical Analysis Overlays ---
+    const ta = technicalAnalysis;
+
+    // Support/Resistance zones
+    if (showSupportResistance && ta) {
+      for (const level of ta.support_levels) {
+        candleSeries.createPriceLine({
+          price: level.price,
+          color: "#22c55e60",
+          lineWidth: 1,
+          lineStyle: 1,
+          axisLabelVisible: true,
+          title: `S ${level.touches}t`,
+        });
+      }
+      for (const level of ta.resistance_levels) {
+        candleSeries.createPriceLine({
+          price: level.price,
+          color: "#ef444460",
+          lineWidth: 1,
+          lineStyle: 1,
+          axisLabelVisible: true,
+          title: `R ${level.touches}t`,
+        });
+      }
+    }
+
+    // Trendlines
+    if (showTrendlines && ta) {
+      for (const line of ta.trendlines) {
+        const color = line.trend_type === "uptrend" ? "#22c55e" : "#ef4444";
+        // Main trendline
+        const trendSeries = chart.addSeries(LineSeries, {
+          color,
+          lineWidth: 2,
+          lineStyle: 0,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+        trendSeries.setData([
+          { time: toTime(line.start_time), value: line.start_price },
+          { time: toTime(line.end_time), value: line.end_price },
+        ]);
+
+        // Projection (dashed)
+        if (line.projection.length > 0) {
+          const projSeries = chart.addSeries(LineSeries, {
+            color: color + "80",
+            lineWidth: 1,
+            lineStyle: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          });
+          const projData = [
+            { time: toTime(line.end_time), value: line.end_price },
+            ...line.projection.map((p) => ({
+              time: toTime(p.time),
+              value: p.price,
+            })),
+          ];
+          projSeries.setData(projData);
+        }
+      }
+    }
+
+    // Chart patterns
+    if (showPatterns && ta) {
+      for (const pattern of ta.patterns) {
+        if (pattern.boundary_points.length >= 2) {
+          const patternSeries = chart.addSeries(LineSeries, {
+            color: "#8b5cf6",
+            lineWidth: 2,
+            lineStyle: 0,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          });
+          patternSeries.setData(
+            pattern.boundary_points.map((p) => ({
+              time: toTime(p.time),
+              value: p.price,
+            }))
+          );
+        }
+        // Target price line
+        if (pattern.target_price) {
+          candleSeries.createPriceLine({
+            price: pattern.target_price,
+            color: "#8b5cf680",
+            lineWidth: 1,
+            lineStyle: 3,
+            axisLabelVisible: true,
+            title: pattern.pattern_type.replace(/_/g, " "),
+          });
+        }
+      }
+    }
+
+    // Price projections
+    if (showProjections && ta) {
+      for (const proj of ta.projections) {
+        const color = proj.projection_type === "bullish" ? "#22c55e" : "#ef4444";
+        candleSeries.createPriceLine({
+          price: proj.price,
+          color: color + "90",
+          lineWidth: 1,
+          lineStyle: 3,
+          axisLabelVisible: true,
+          title: `${proj.reason} (${Math.round(proj.confidence * 100)}%)`,
+        });
+      }
+    }
+
     chart.timeScale().fitContent();
 
     const handleResize = () => {
@@ -157,7 +282,7 @@ export function CandlestickChart({
       window.removeEventListener("resize", handleResize);
       chart.remove();
     };
-  }, [bars, signals, showEma9, showEma21, showEma50, showEma200, showVwap, showRs]);
+  }, [bars, signals, showEma9, showEma21, showEma50, showEma200, showVwap, showRs, technicalAnalysis, showSupportResistance, showTrendlines, showPatterns, showProjections]);
 
   return <div ref={containerRef} className="w-full" />;
 }

@@ -92,8 +92,52 @@ export interface ChartBar {
   rs_vs_spy: number | null;
 }
 
+export interface SupportResistanceLevel {
+  price: number;
+  strength: number;
+  touches: number;
+  zone_top: number;
+  zone_bottom: number;
+  level_type: "support" | "resistance";
+}
+
+export interface TrendLine {
+  start_time: string;
+  start_price: number;
+  end_time: string;
+  end_price: number;
+  touches: number;
+  trend_type: "uptrend" | "downtrend";
+  projection: Array<{ time: string; price: number }>;
+}
+
+export interface ChartPattern {
+  pattern_type: string;
+  confidence: number;
+  target_price: number | null;
+  boundary_points: Array<{ time: string; price: number }>;
+  description: string;
+}
+
+export interface PriceProjection {
+  price: number;
+  confidence: number;
+  reason: string;
+  projection_type: "bullish" | "bearish";
+}
+
+export interface TechnicalAnalysis {
+  support_levels: SupportResistanceLevel[];
+  resistance_levels: SupportResistanceLevel[];
+  trendlines: TrendLine[];
+  patterns: ChartPattern[];
+  projections: PriceProjection[];
+  trend_summary: string;
+}
+
 export interface ChartData {
   symbol: string;
   bars: ChartBar[];
   signals: Signal[];
+  technical_analysis: TechnicalAnalysis | null;
 }

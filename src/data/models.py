@@ -94,10 +94,54 @@ class ChartBar(BaseModel):
     rs_vs_spy: float | None = None
 
 
+class SupportResistanceLevel(BaseModel):
+    price: float
+    strength: float
+    touches: int
+    zone_top: float
+    zone_bottom: float
+    level_type: str
+
+
+class TrendLine(BaseModel):
+    start_time: datetime
+    start_price: float
+    end_time: datetime
+    end_price: float
+    touches: int
+    trend_type: str
+    projection: list[dict] = []
+
+
+class ChartPattern(BaseModel):
+    pattern_type: str
+    confidence: float
+    target_price: float | None = None
+    boundary_points: list[dict] = []
+    description: str = ""
+
+
+class PriceProjection(BaseModel):
+    price: float
+    confidence: float
+    reason: str
+    projection_type: str
+
+
+class TechnicalAnalysis(BaseModel):
+    support_levels: list[SupportResistanceLevel] = []
+    resistance_levels: list[SupportResistanceLevel] = []
+    trendlines: list[TrendLine] = []
+    patterns: list[ChartPattern] = []
+    projections: list[PriceProjection] = []
+    trend_summary: str = ""
+
+
 class ChartData(BaseModel):
     symbol: str
     bars: list[ChartBar]
     signals: list[Signal]
+    technical_analysis: TechnicalAnalysis | None = None
 
 
 class BacktestResult(BaseModel):

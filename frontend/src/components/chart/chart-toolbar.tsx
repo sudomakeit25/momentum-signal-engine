@@ -21,6 +21,13 @@ interface ChartToolbarProps {
     rs: boolean;
   };
   onIndicatorToggle: (key: string, val: boolean) => void;
+  analysis: {
+    sr: boolean;
+    trendlines: boolean;
+    patterns: boolean;
+    projections: boolean;
+  };
+  onAnalysisToggle: (key: string, val: boolean) => void;
 }
 
 const DAY_OPTIONS = [30, 60, 90, 200, 365];
@@ -30,6 +37,8 @@ export function ChartToolbar({
   onDaysChange,
   indicators,
   onIndicatorToggle,
+  analysis,
+  onAnalysisToggle,
 }: ChartToolbarProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -114,6 +123,28 @@ export function ChartToolbar({
               className="h-4 w-7"
             />
             <Label htmlFor={key} className={`text-[10px] ${color}`}>
+              {label}
+            </Label>
+          </div>
+        ))}
+      </div>
+
+      {/* Technical analysis toggles */}
+      <div className="flex items-center gap-3 border-l border-zinc-700 pl-3">
+        {[
+          { key: "sr", label: "S/R", color: "text-blue-400" },
+          { key: "trendlines", label: "Trends", color: "text-green-400" },
+          { key: "patterns", label: "Patterns", color: "text-violet-400" },
+          { key: "projections", label: "Targets", color: "text-amber-400" },
+        ].map(({ key, label, color }) => (
+          <div key={key} className="flex items-center gap-1">
+            <Switch
+              id={`ta-${key}`}
+              checked={analysis[key as keyof typeof analysis]}
+              onCheckedChange={(val) => onAnalysisToggle(key, val)}
+              className="h-4 w-7"
+            />
+            <Label htmlFor={`ta-${key}`} className={`text-[10px] ${color}`}>
               {label}
             </Label>
           </div>

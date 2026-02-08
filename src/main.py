@@ -1,8 +1,12 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config.settings import settings
 from src.api.routes import router
+
+PORT = int(os.environ.get("PORT", 8000))
 
 app = FastAPI(
     title="Momentum Signal Engine",
@@ -21,3 +25,7 @@ app.add_middleware(
 )
 
 app.include_router(router)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=PORT)

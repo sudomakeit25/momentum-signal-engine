@@ -63,6 +63,7 @@ def detect_head_and_shoulders(df: pd.DataFrame) -> list[dict]:
             "pattern_type": "head_and_shoulders",
             "confidence": round(confidence, 2),
             "target_price": round(target, 2),
+            "bias": "bearish",
             "boundary_points": [
                 {"time": ls["timestamp"].isoformat(), "price": ls["price"]},
                 {"time": df.index[ls["index"] + (head["index"] - ls["index"]) // 2].isoformat(), "price": trough1_price},
@@ -121,6 +122,7 @@ def detect_inverse_head_and_shoulders(df: pd.DataFrame) -> list[dict]:
             "pattern_type": "inverse_head_and_shoulders",
             "confidence": round(confidence, 2),
             "target_price": round(target, 2),
+            "bias": "bullish",
             "boundary_points": [
                 {"time": ls["timestamp"].isoformat(), "price": ls["price"]},
                 {"time": df.index[ls["index"] + (head["index"] - ls["index"]) // 2].isoformat(), "price": peak1_price},
@@ -178,6 +180,7 @@ def detect_double_top(df: pd.DataFrame, tolerance: float = 0.03) -> list[dict]:
             "pattern_type": "double_top",
             "confidence": 0.70,
             "target_price": round(target, 2),
+            "bias": "bearish",
             "boundary_points": [
                 {"time": p1["timestamp"].isoformat(), "price": p1["price"]},
                 {"time": df.index[(p1["index"] + p2["index"]) // 2].isoformat(), "price": trough_price},
@@ -226,6 +229,7 @@ def detect_double_bottom(df: pd.DataFrame, tolerance: float = 0.03) -> list[dict
             "pattern_type": "double_bottom",
             "confidence": 0.70,
             "target_price": round(target, 2),
+            "bias": "bullish",
             "boundary_points": [
                 {"time": p1["timestamp"].isoformat(), "price": p1["price"]},
                 {"time": df.index[(p1["index"] + p2["index"]) // 2].isoformat(), "price": peak_price},
@@ -274,15 +278,19 @@ def detect_triangle(df: pd.DataFrame) -> list[dict]:
 
         pattern_type = None
         description = ""
+        bias = "neutral"
 
         if abs(high_slope_pct) < 0.001 and low_slope_pct > 0.0005:
             pattern_type = "ascending_triangle"
+            bias = "bullish"
             description = "Ascending Triangle: flat resistance with rising support. Bullish breakout expected."
         elif high_slope_pct < -0.0005 and abs(low_slope_pct) < 0.001:
             pattern_type = "descending_triangle"
+            bias = "bearish"
             description = "Descending Triangle: falling highs with flat support. Bearish breakdown likely."
         elif high_slope_pct < -0.0003 and low_slope_pct > 0.0003:
             pattern_type = "symmetrical_triangle"
+            bias = "neutral"
             description = "Symmetrical Triangle: converging highs and lows. Breakout direction uncertain."
         else:
             continue
@@ -312,6 +320,7 @@ def detect_triangle(df: pd.DataFrame) -> list[dict]:
             "pattern_type": pattern_type,
             "confidence": 0.65,
             "target_price": round(target, 2) if target else None,
+            "bias": bias,
             "boundary_points": boundary,
             "description": description + (f" Target: ${target:.2f}" if target else ""),
         })
@@ -387,6 +396,7 @@ def detect_cup_and_handle(df: pd.DataFrame) -> list[dict]:
             "pattern_type": "cup_and_handle",
             "confidence": 0.70,
             "target_price": round(target, 2),
+            "bias": "bullish",
             "boundary_points": boundary,
             "description": f"Cup & Handle ({lookback}d): rim at ${breakout_level:.2f}, cup depth {cup_depth_pct*100:.0f}%. Bullish target ${target:.2f}.",
         })
@@ -437,6 +447,7 @@ def detect_wedge(df: pd.DataFrame) -> list[dict]:
                 "pattern_type": "rising_wedge",
                 "confidence": 0.60,
                 "target_price": round(target, 2),
+                "bias": "bearish",
                 "boundary_points": [
                     {"time": highs[0]["timestamp"].isoformat(), "price": highs[0]["price"]},
                     {"time": highs[-1]["timestamp"].isoformat(), "price": highs[-1]["price"]},
@@ -455,6 +466,7 @@ def detect_wedge(df: pd.DataFrame) -> list[dict]:
                 "pattern_type": "falling_wedge",
                 "confidence": 0.60,
                 "target_price": round(target, 2),
+                "bias": "bullish",
                 "boundary_points": [
                     {"time": highs[0]["timestamp"].isoformat(), "price": highs[0]["price"]},
                     {"time": highs[-1]["timestamp"].isoformat(), "price": highs[-1]["price"]},

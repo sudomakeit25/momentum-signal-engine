@@ -119,6 +119,7 @@ class ChartPattern(BaseModel):
     target_price: float | None = None
     boundary_points: list[dict] = []
     description: str = ""
+    bias: str = "neutral"  # "bullish" | "bearish" | "neutral"
 
 
 class PriceProjection(BaseModel):

@@ -117,6 +117,7 @@ export interface ChartPattern {
   target_price: number | null;
   boundary_points: Array<{ time: string; price: number }>;
   description: string;
+  bias: "bullish" | "bearish" | "neutral";
 }
 
 export interface PriceProjection {

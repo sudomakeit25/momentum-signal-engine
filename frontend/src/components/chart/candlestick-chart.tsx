@@ -224,9 +224,13 @@ export function CandlestickChart({
     // Chart patterns
     if (showPatterns && ta) {
       for (const pattern of ta.patterns) {
+        const patternColor =
+          pattern.bias === "bullish" ? "#22c55e" :
+          pattern.bias === "bearish" ? "#ef4444" : "#8b5cf6";
+
         if (pattern.boundary_points.length >= 2) {
           const patternSeries = chart.addSeries(LineSeries, {
-            color: "#8b5cf6",
+            color: patternColor,
             lineWidth: 2,
             lineStyle: 0,
             priceLineVisible: false,
@@ -244,11 +248,11 @@ export function CandlestickChart({
         if (pattern.target_price) {
           candleSeries.createPriceLine({
             price: pattern.target_price,
-            color: "#8b5cf680",
+            color: patternColor + "80",
             lineWidth: 1,
             lineStyle: 3,
             axisLabelVisible: true,
-            title: pattern.pattern_type.replace(/_/g, " "),
+            title: `${pattern.bias === "bullish" ? "\u25B2" : pattern.bias === "bearish" ? "\u25BC" : "\u25C6"} ${pattern.pattern_type.replace(/_/g, " ")}`,
           });
         }
       }

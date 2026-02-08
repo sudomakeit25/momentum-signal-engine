@@ -26,19 +26,30 @@ export function TechnicalAnalysisPanel({ analysis }: TechnicalAnalysisPanelProps
           <div className="space-y-2">
             {analysis.patterns.map((p, i) => (
               <div key={i} className="text-sm">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                      p.bias === "bullish"
+                        ? "bg-green-500/20 text-green-400"
+                        : p.bias === "bearish"
+                          ? "bg-red-500/20 text-red-400"
+                          : "bg-zinc-500/20 text-zinc-400"
+                    }`}
+                  >
+                    {p.bias}
+                  </span>
                   <span className="font-medium text-zinc-200">
                     {p.pattern_type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                   </span>
-                  <span className="text-xs text-zinc-500">
+                  <span className="ml-auto text-xs text-zinc-500">
                     {Math.round(p.confidence * 100)}% conf
                   </span>
                 </div>
                 {p.description && (
-                  <p className="text-xs text-zinc-500">{p.description}</p>
+                  <p className="mt-0.5 text-xs text-zinc-500">{p.description}</p>
                 )}
                 {p.target_price && (
-                  <p className="text-xs text-violet-400">
+                  <p className={`text-xs ${p.bias === "bullish" ? "text-green-400" : p.bias === "bearish" ? "text-red-400" : "text-violet-400"}`}>
                     Target: ${p.target_price.toFixed(2)}
                   </p>
                 )}

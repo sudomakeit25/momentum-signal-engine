@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 
 import pandas as pd
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
+from alpaca.data.historical import StockHistoricalDataClient, CryptoHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest, CryptoBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import GetAssetsRequest
@@ -19,6 +19,14 @@ def _get_data_client() -> StockHistoricalDataClient:
         settings.alpaca_api_key,
         settings.alpaca_secret_key,
     )
+
+
+def _get_crypto_client() -> CryptoHistoricalDataClient:
+    return CryptoHistoricalDataClient()
+
+
+def _is_crypto(symbol: str) -> bool:
+    return "/" in symbol
 
 
 def _get_trading_client() -> TradingClient:
@@ -40,14 +48,23 @@ def get_bars(
     if cached is not None:
         return cached
 
-    client = _get_data_client()
     start = datetime.now() - timedelta(days=days)
-    request = StockBarsRequest(
-        symbol_or_symbols=symbol,
-        timeframe=timeframe,
-        start=start,
-    )
-    barset = client.get_stock_bars(request)
+    if _is_crypto(symbol):
+        client = _get_crypto_client()
+        request = CryptoBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=timeframe,
+            start=start,
+        )
+        barset = client.get_crypto_bars(request)
+    else:
+        client = _get_data_client()
+        request = StockBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=timeframe,
+            start=start,
+        )
+        barset = client.get_stock_bars(request)
     bars = barset.df
     if isinstance(bars.index, pd.MultiIndex):
         bars = bars.droplevel("symbol")
@@ -69,26 +86,39 @@ def get_multi_bars(
     if cached is not None:
         return cached
 
-    client = _get_data_client()
     start = datetime.now() - timedelta(days=days)
-    request = StockBarsRequest(
-        symbol_or_symbols=symbols,
-        timeframe=timeframe,
-        start=start,
-    )
-    barset = client.get_stock_bars(request)
-    df = barset.df
-
     result: dict[str, pd.DataFrame] = {}
-    if isinstance(df.index, pd.MultiIndex) and "symbol" in df.index.names:
-        for sym in df.index.get_level_values("symbol").unique():
-            sym_df = df.xs(sym, level="symbol").sort_index()
-            sym_df.index = pd.to_datetime(sym_df.index)
-            result[sym] = sym_df
-    else:
-        # Single symbol fallback
-        df.index = pd.to_datetime(df.index)
-        result[symbols[0]] = df.sort_index()
+
+    stock_symbols = [s for s in symbols if not _is_crypto(s)]
+    crypto_symbols = [s for s in symbols if _is_crypto(s)]
+
+    def _parse_barset(df: pd.DataFrame, syms: list[str]) -> None:
+        if isinstance(df.index, pd.MultiIndex) and "symbol" in df.index.names:
+            for sym in df.index.get_level_values("symbol").unique():
+                sym_df = df.xs(sym, level="symbol").sort_index()
+                sym_df.index = pd.to_datetime(sym_df.index)
+                result[sym] = sym_df
+        elif len(syms) == 1:
+            df.index = pd.to_datetime(df.index)
+            result[syms[0]] = df.sort_index()
+
+    if stock_symbols:
+        client = _get_data_client()
+        request = StockBarsRequest(
+            symbol_or_symbols=stock_symbols,
+            timeframe=timeframe,
+            start=start,
+        )
+        _parse_barset(client.get_stock_bars(request).df, stock_symbols)
+
+    if crypto_symbols:
+        crypto_client = _get_crypto_client()
+        request = CryptoBarsRequest(
+            symbol_or_symbols=crypto_symbols,
+            timeframe=timeframe,
+            start=start,
+        )
+        _parse_barset(crypto_client.get_crypto_bars(request).df, crypto_symbols)
 
     _cache.set(cache_key, result)
     return result

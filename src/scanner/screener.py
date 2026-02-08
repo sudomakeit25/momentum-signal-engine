@@ -110,14 +110,42 @@ def get_default_universe() -> list[str]:
     In production, this would dynamically fetch from Alpaca's asset list.
     """
     return [
+        # Tech mega-cap
         "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AMD",
         "NFLX", "CRM", "ADBE", "ORCL", "AVGO", "QCOM", "INTC", "MU",
+        # Fintech / payments
         "SHOP", "SQ", "PYPL", "COIN", "MARA", "RIOT", "SOFI", "PLTR",
+        # Cloud / cybersecurity
         "SNOW", "DDOG", "NET", "CRWD", "ZS", "PANW", "ABNB", "UBER",
+        # Consumer / gaming
         "DASH", "RBLX", "U", "TTD", "ENPH", "SEDG", "FSLR", "CEG",
+        # Healthcare / pharma
         "LLY", "UNH", "JNJ", "PFE", "ABBV", "MRK", "BMY", "AMGN",
+        "TMO", "ABT", "DHR", "ISRG", "MDT", "GILD", "VRTX", "REGN",
+        # Energy
         "XOM", "CVX", "COP", "SLB", "OXY", "DVN", "MPC", "PSX",
+        "EOG", "HES", "VLO", "HAL",
+        # Financials
         "JPM", "BAC", "GS", "MS", "WFC", "C", "SCHW", "BLK",
+        "AXP", "COF", "ICE", "CME", "SPGI", "MMC",
+        # Industrials / defense
         "CAT", "DE", "HON", "GE", "RTX", "LMT", "BA", "NOC",
-        "SPY", "QQQ", "IWM", "DIA",
+        "UNP", "UPS", "FDX", "WM", "EMR", "ITW",
+        # Consumer staples / discretionary
+        "WMT", "COST", "HD", "LOW", "TGT", "NKE", "SBUX", "MCD",
+        "PG", "KO", "PEP", "CL", "EL", "MNST",
+        # Telecom / media
+        "DIS", "CMCSA", "T", "VZ", "CHTR", "TMUS",
+        # Semiconductors
+        "LRCX", "KLAC", "AMAT", "MRVL", "ON", "SWKS", "TXN",
+        # Software / SaaS
+        "NOW", "INTU", "WDAY", "TEAM", "ZM", "OKTA", "MDB", "HUBS",
+        # Real estate / utilities
+        "AMT", "PLD", "CCI", "EQIX", "NEE", "DUK", "SO", "AEP",
+        # Materials
+        "LIN", "APD", "SHW", "ECL", "NEM", "FCX",
+        # ETFs
+        "SPY", "QQQ", "IWM", "DIA", "XLF", "XLE", "XLK", "XLV",
+        # Crypto
+        "BTC/USD", "ETH/USD", "SOL/USD", "DOGE/USD", "AVAX/USD", "LINK/USD",
     ]

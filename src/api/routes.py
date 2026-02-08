@@ -138,6 +138,54 @@ def _safe_round(val, decimals=2):
     return round(float(val), decimals)
 
 
+SECTOR_MAP = {
+    "Tech": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "AMD", "AVGO", "QCOM", "INTC", "MU", "ORCL", "CRM", "ADBE", "NFLX"],
+    "Semis": ["LRCX", "KLAC", "AMAT", "MRVL", "ON", "SWKS", "TXN"],
+    "Software": ["NOW", "INTU", "WDAY", "TEAM", "ZM", "OKTA", "MDB", "HUBS"],
+    "Fintech": ["SQ", "PYPL", "COIN", "SOFI", "SHOP", "PLTR"],
+    "Cloud/Cyber": ["SNOW", "DDOG", "NET", "CRWD", "ZS", "PANW"],
+    "Consumer Disc.": ["TSLA", "ABNB", "UBER", "DASH", "RBLX", "U", "TTD", "NKE", "SBUX", "MCD", "HD", "LOW", "TGT"],
+    "Consumer Staples": ["WMT", "COST", "PG", "KO", "PEP", "CL", "EL", "MNST"],
+    "Energy": ["XOM", "CVX", "COP", "SLB", "OXY", "DVN", "MPC", "PSX", "EOG", "HES", "VLO", "HAL"],
+    "Clean Energy": ["ENPH", "SEDG", "FSLR", "CEG"],
+    "Healthcare": ["LLY", "UNH", "JNJ", "PFE", "ABBV", "MRK", "BMY", "AMGN", "TMO", "ABT", "DHR", "ISRG", "MDT", "GILD", "VRTX", "REGN"],
+    "Financials": ["JPM", "BAC", "GS", "MS", "WFC", "C", "SCHW", "BLK", "AXP", "COF", "ICE", "CME", "SPGI", "MMC"],
+    "Industrials": ["CAT", "DE", "HON", "GE", "RTX", "LMT", "BA", "NOC", "UNP", "UPS", "FDX", "WM", "EMR", "ITW"],
+    "Telecom/Media": ["DIS", "CMCSA", "T", "VZ", "CHTR", "TMUS"],
+    "RE/Utilities": ["AMT", "PLD", "CCI", "EQIX", "NEE", "DUK", "SO", "AEP"],
+    "Materials": ["LIN", "APD", "SHW", "ECL", "NEM", "FCX"],
+    "Crypto": ["MARA", "RIOT"],
+    "ETFs": ["SPY", "QQQ", "IWM", "DIA", "XLF", "XLE", "XLK", "XLV"],
+}
+
+
+@router.get("/sectors")
+def sector_performance():
+    """Sector rotation: average change % and RS by sector."""
+    results = scan_universe(get_default_universe(), top_n=100, min_price=0, max_price=9999, min_volume=0)
+    result_map = {r.symbol: r for r in results}
+
+    sectors = []
+    for sector, symbols in SECTOR_MAP.items():
+        members = [result_map[s] for s in symbols if s in result_map]
+        if not members:
+            continue
+        avg_change = sum(m.change_pct for m in members) / len(members)
+        avg_rs = sum(m.relative_strength for m in members) / len(members)
+        avg_score = sum(m.score for m in members) / len(members)
+        sectors.append({
+            "sector": sector,
+            "avg_change_pct": round(avg_change, 2),
+            "avg_rs": round(avg_rs, 3),
+            "avg_score": round(avg_score, 1),
+            "count": len(members),
+            "top_stock": max(members, key=lambda m: m.change_pct).symbol,
+        })
+
+    sectors.sort(key=lambda s: s["avg_change_pct"], reverse=True)
+    return sectors
+
+
 @router.get("/breadth")
 def market_breadth():
     """Market breadth: bullish vs bearish stock count."""

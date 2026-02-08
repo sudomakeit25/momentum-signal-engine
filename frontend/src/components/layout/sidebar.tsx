@@ -17,6 +17,7 @@ import {
   X,
   LayoutGrid,
   Eye,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { href: "/position-sizer", label: "Position Sizer", icon: Calculator },
   { href: "/backtest", label: "Backtest", icon: BarChart3 },
   { href: "/heatmap", label: "Heatmap", icon: LayoutGrid },
+  { href: "/sectors", label: "Sectors", icon: TrendingUp },
   { href: "/guide", label: "Guide", icon: BookOpen },
 ];
 

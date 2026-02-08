@@ -1,0 +1,162 @@
+"""FastAPI routes for the Momentum Signal Engine."""
+
+from fastapi import APIRouter, Query
+
+from src.backtest.engine import run_backtest
+from src.data import client
+import pandas as pd
+
+from src.data.models import BacktestResult, ChartBar, ChartData, PositionSize, ScanResult, Signal
+from src.risk.position_sizer import calculate_position_size
+from src.scanner.screener import get_default_universe, scan_universe
+from src.signals.generator import generate_signals
+from src.signals.indicators import add_all_indicators, vwap
+from src.signals.patterns import detect_patterns
+
+router = APIRouter()
+
+
+@router.get("/health")
+def health_check():
+    return {"status": "ok", "service": "momentum-signal-engine"}
+
+
+@router.get("/scan", response_model=list[ScanResult])
+def scan(
+    top: int = Query(default=20, ge=1, le=100, description="Number of top results"),
+    min_price: float = Query(default=5.0, ge=0),
+    max_price: float = Query(default=500.0, ge=0),
+    min_volume: int = Query(default=500_000, ge=0),
+):
+    """Run momentum scanner on the default universe."""
+    symbols = get_default_universe()
+    results = scan_universe(
+        symbols, top_n=top, min_price=min_price, max_price=max_price, min_volume=min_volume
+    )
+    # Enrich with signals
+    for result in results:
+        try:
+            df = client.get_bars(result.symbol, days=200)
+            result.signals = generate_signals(df, result.symbol)
+            result.setup_types.extend(detect_patterns(df))
+            # Deduplicate setup types
+            result.setup_types = list(set(result.setup_types))
+        except Exception:
+            pass
+    return results
+
+
+@router.get("/scan/{symbol}", response_model=ScanResult | None)
+def scan_symbol(symbol: str):
+    """Detailed momentum analysis for a single stock."""
+    results = scan_universe([symbol.upper()], top_n=1)
+    if not results:
+        return None
+    result = results[0]
+    try:
+        df = client.get_bars(result.symbol, days=200)
+        result.signals = generate_signals(df, result.symbol)
+        result.setup_types.extend(detect_patterns(df))
+        result.setup_types = list(set(result.setup_types))
+    except Exception:
+        pass
+    return result
+
+
+@router.get("/signals", response_model=list[Signal])
+def get_signals(
+    top: int = Query(default=20, ge=1, le=100),
+):
+    """Get current buy/sell signals across the default universe."""
+    symbols = get_default_universe()
+    all_signals: list[Signal] = []
+
+    bars_map = client.get_multi_bars(symbols, days=200)
+    for symbol, df in bars_map.items():
+        if len(df) < 50:
+            continue
+        try:
+            signals = generate_signals(df, symbol)
+            all_signals.extend(signals)
+        except Exception:
+            continue
+
+    # Sort by confidence descending
+    all_signals.sort(key=lambda s: s.confidence, reverse=True)
+    return all_signals[:top]
+
+
+@router.get("/signals/{symbol}", response_model=list[Signal])
+def get_symbol_signals(symbol: str):
+    """Get signals for a specific stock."""
+    df = client.get_bars(symbol.upper(), days=200)
+    return generate_signals(df, symbol.upper())
+
+
+@router.get("/chart/{symbol}", response_model=ChartData)
+def chart_data(
+    symbol: str,
+    days: int = Query(default=200, ge=30, le=1000),
+):
+    """Get OHLCV + indicators for charting."""
+    symbol = symbol.upper()
+    df = client.get_bars(symbol, days=days)
+    df = add_all_indicators(df)
+    vwap_series = vwap(df)
+    df["vwap_val"] = vwap_series
+
+    bars = []
+    for idx, row in df.iterrows():
+        ts = idx.to_pydatetime() if hasattr(idx, "to_pydatetime") else idx
+        bars.append(ChartBar(
+            timestamp=ts,
+            open=round(row["open"], 2),
+            high=round(row["high"], 2),
+            low=round(row["low"], 2),
+            close=round(row["close"], 2),
+            volume=int(row["volume"]),
+            ema9=_safe_round(row.get("ema9")),
+            ema21=_safe_round(row.get("ema21")),
+            ema50=_safe_round(row.get("ema50")),
+            ema200=_safe_round(row.get("ema200")),
+            rsi=_safe_round(row.get("rsi")),
+            macd_line=_safe_round(row.get("macd_line")),
+            macd_signal=_safe_round(row.get("macd_signal")),
+            macd_hist=_safe_round(row.get("macd_hist")),
+            atr=_safe_round(row.get("atr")),
+            volume_sma20=_safe_round(row.get("volume_sma20")),
+            vwap=_safe_round(row.get("vwap_val")),
+        ))
+
+    signals = generate_signals(df, symbol)
+    return ChartData(symbol=symbol, bars=bars, signals=signals)
+
+
+def _safe_round(val, decimals=2):
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return None
+    return round(float(val), decimals)
+
+
+@router.get("/backtest", response_model=BacktestResult)
+def backtest(
+    symbol: str = Query(default="SPY"),
+    days: int = Query(default=365, ge=30, le=1000),
+    capital: float = Query(default=100_000, ge=1000),
+    risk_pct: float = Query(default=2.0, ge=0.1, le=10),
+):
+    """Run backtest on a symbol with momentum strategy."""
+    df = client.get_bars(symbol.upper(), days=days)
+    return run_backtest(df, symbol.upper(), capital, risk_pct)
+
+
+@router.get("/risk/position-size", response_model=PositionSize)
+def position_size(
+    account: float = Query(..., ge=0, description="Account size in dollars"),
+    risk: float = Query(default=2.0, ge=0.1, le=10, description="Risk % per trade"),
+    entry: float = Query(..., ge=0, description="Entry price"),
+    stop: float = Query(..., ge=0, description="Stop-loss price"),
+    target: float | None = Query(default=None, ge=0, description="Target price"),
+):
+    """Calculate position size."""
+    return calculate_position_size(account, risk, entry, stop, target)

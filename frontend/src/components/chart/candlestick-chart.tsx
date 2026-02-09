@@ -184,39 +184,48 @@ export function CandlestickChart({
     // Trendlines
     if (showTrendlines && ta) {
       for (const line of ta.trendlines) {
-        const color = line.trend_type === "uptrend" ? "#22c55e" : "#ef4444";
-        // Main trendline
-        const trendSeries = chart.addSeries(LineSeries, {
-          color,
-          lineWidth: 2,
-          lineStyle: 0,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: false,
-        });
-        trendSeries.setData([
-          { time: toTime(line.start_time), value: line.start_price },
-          { time: toTime(line.end_time), value: line.end_price },
-        ]);
+        try {
+          const color = line.trend_type === "uptrend" ? "#22c55e" : "#ef4444";
+          const startTime = toTime(line.start_time);
+          const endTime = toTime(line.end_time);
 
-        // Projection (dashed)
-        if (line.projection.length > 0) {
-          const projSeries = chart.addSeries(LineSeries, {
-            color: color + "80",
-            lineWidth: 1,
-            lineStyle: 2,
+          // Ensure start < end
+          if ((startTime as string) >= (endTime as string)) continue;
+
+          const trendSeries = chart.addSeries(LineSeries, {
+            color,
+            lineWidth: 2,
+            lineStyle: 0,
             priceLineVisible: false,
             lastValueVisible: false,
             crosshairMarkerVisible: false,
           });
-          const projData = [
-            { time: toTime(line.end_time), value: line.end_price },
-            ...line.projection.map((p) => ({
-              time: toTime(p.time),
-              value: p.price,
-            })),
-          ];
-          projSeries.setData(projData);
+          trendSeries.setData([
+            { time: startTime, value: line.start_price },
+            { time: endTime, value: line.end_price },
+          ]);
+
+          // Projection (dashed)
+          if (line.projection.length > 0) {
+            const projSeries = chart.addSeries(LineSeries, {
+              color: color + "80",
+              lineWidth: 1,
+              lineStyle: 2,
+              priceLineVisible: false,
+              lastValueVisible: false,
+              crosshairMarkerVisible: false,
+            });
+            const projData = [
+              { time: endTime, value: line.end_price },
+              ...line.projection.map((p) => ({
+                time: toTime(p.time),
+                value: p.price,
+              })),
+            ];
+            projSeries.setData(projData);
+          }
+        } catch {
+          // Skip trendlines that can't be rendered
         }
       }
     }
@@ -224,36 +233,47 @@ export function CandlestickChart({
     // Chart patterns
     if (showPatterns && ta) {
       for (const pattern of ta.patterns) {
-        const patternColor =
-          pattern.bias === "bullish" ? "#22c55e" :
-          pattern.bias === "bearish" ? "#ef4444" : "#8b5cf6";
+        try {
+          const patternColor =
+            pattern.bias === "bullish" ? "#22c55e" :
+            pattern.bias === "bearish" ? "#ef4444" : "#8b5cf6";
 
-        if (pattern.boundary_points.length >= 2) {
-          const patternSeries = chart.addSeries(LineSeries, {
-            color: patternColor,
-            lineWidth: 2,
-            lineStyle: 0,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            crosshairMarkerVisible: false,
-          });
-          patternSeries.setData(
-            pattern.boundary_points.map((p) => ({
-              time: toTime(p.time),
-              value: p.price,
-            }))
-          );
-        }
-        // Target price line
-        if (pattern.target_price) {
-          candleSeries.createPriceLine({
-            price: pattern.target_price,
-            color: patternColor + "80",
-            lineWidth: 1,
-            lineStyle: 3,
-            axisLabelVisible: true,
-            title: `${pattern.bias === "bullish" ? "\u25B2" : pattern.bias === "bearish" ? "\u25BC" : "\u25C6"} ${pattern.pattern_type.replace(/_/g, " ")}`,
-          });
+          if (pattern.boundary_points.length >= 2) {
+            // Sort by time — lightweight-charts requires ascending order
+            const sorted = [...pattern.boundary_points]
+              .map((p) => ({ time: toTime(p.time), value: p.price }))
+              .sort((a, b) => (a.time as string).localeCompare(b.time as string));
+
+            // Deduplicate same-time entries (keep first)
+            const deduped = sorted.filter(
+              (pt, i, arr) => i === 0 || pt.time !== arr[i - 1].time
+            );
+
+            if (deduped.length >= 2) {
+              const patternSeries = chart.addSeries(LineSeries, {
+                color: patternColor,
+                lineWidth: 2,
+                lineStyle: 0,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
+              });
+              patternSeries.setData(deduped);
+            }
+          }
+          // Target price line
+          if (pattern.target_price) {
+            candleSeries.createPriceLine({
+              price: pattern.target_price,
+              color: patternColor + "80",
+              lineWidth: 1,
+              lineStyle: 3,
+              axisLabelVisible: true,
+              title: `${pattern.bias === "bullish" ? "\u25B2" : pattern.bias === "bearish" ? "\u25BC" : "\u25C6"} ${pattern.pattern_type.replace(/_/g, " ")}`,
+            });
+          }
+        } catch {
+          // Skip patterns that can't be rendered
         }
       }
     }

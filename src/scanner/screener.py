@@ -1,5 +1,6 @@
 """Multi-criteria stock screener — combines filters + momentum scoring."""
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import pandas as pd
@@ -53,43 +54,40 @@ def scan_universe(
 
     results: list[ScanResult] = []
 
-    for symbol, df in bars_map.items():
-        if df.empty or len(df) < 50:
-            continue
+    def _score_symbol(item: tuple[str, pd.DataFrame]) -> ScanResult | None:
+        symbol, df = item
+        try:
+            if df.empty or len(df) < 50:
+                return None
+            if not apply_filters(df, min_price, max_price, min_volume):
+                return None
 
-        if not apply_filters(df, min_price, max_price, min_volume):
-            continue
+            score = compute_momentum_score(df, spy_df)
+            if score < 20:
+                return None
 
-        score = compute_momentum_score(df, spy_df)
-        if score < 20:
-            continue
+            last_close = df["close"].iloc[-1]
+            prev_close = df["close"].iloc[-2] if len(df) > 1 else last_close
+            change_pct = ((last_close - prev_close) / prev_close) * 100
+            last_volume = int(df["volume"].iloc[-1])
+            avg_vol = int(volume_sma(df["volume"], 20).iloc[-1])
 
-        # Gather metadata
-        last_close = df["close"].iloc[-1]
-        prev_close = df["close"].iloc[-2] if len(df) > 1 else last_close
-        change_pct = ((last_close - prev_close) / prev_close) * 100
-        last_volume = int(df["volume"].iloc[-1])
-        avg_vol = int(volume_sma(df["volume"], 20).iloc[-1])
+            rs_val = 0.0
+            if len(df) >= 63 and len(spy_df) >= 63:
+                rs = relative_strength_vs_spy(df["close"], spy_df["close"], 63)
+                rs_val = float(rs.iloc[-1]) if pd.notna(rs.iloc[-1]) else 0.0
 
-        # Relative strength
-        rs_val = 0.0
-        if len(df) >= 63 and len(spy_df) >= 63:
-            rs = relative_strength_vs_spy(df["close"], spy_df["close"], 63)
-            rs_val = float(rs.iloc[-1]) if pd.notna(rs.iloc[-1]) else 0.0
+            setups: list[SetupType] = []
+            if is_ema_aligned(df):
+                setups.append(SetupType.EMA_CROSSOVER)
+            if detect_breakout(df):
+                setups.append(SetupType.BREAKOUT)
+            if is_near_52w_high(df, 0.05):
+                setups.append(SetupType.FLAT_BASE)
+            if is_volume_surging(df):
+                setups.append(SetupType.GAP_UP)
 
-        # Identify setup types present
-        setups: list[SetupType] = []
-        if is_ema_aligned(df):
-            setups.append(SetupType.EMA_CROSSOVER)
-        if detect_breakout(df):
-            setups.append(SetupType.BREAKOUT)
-        if is_near_52w_high(df, 0.05):
-            setups.append(SetupType.FLAT_BASE)
-        if is_volume_surging(df):
-            setups.append(SetupType.GAP_UP)
-
-        results.append(
-            ScanResult(
+            return ScanResult(
                 symbol=symbol,
                 price=last_close,
                 change_pct=round(change_pct, 2),
@@ -97,10 +95,16 @@ def scan_universe(
                 avg_volume=avg_vol,
                 relative_strength=round(rs_val, 3),
                 score=round(score, 1),
-                signals=[],  # Populated later by signal generator
+                signals=[],
                 setup_types=setups,
             )
-        )
+        except Exception:
+            return None
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for result in executor.map(_score_symbol, bars_map.items()):
+            if result is not None:
+                results.append(result)
 
     results.sort(key=lambda r: r.score, reverse=True)
     top_results = results[:top_n]

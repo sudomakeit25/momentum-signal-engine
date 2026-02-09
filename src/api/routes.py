@@ -1,11 +1,16 @@
 """FastAPI routes for the Momentum Signal Engine."""
 
+import time
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Query
 
 from src.backtest.engine import run_backtest
 from src.data import client
 import pandas as pd
+
+# In-memory cache for scan results (avoids full recomputation)
+_scan_cache: dict[str, tuple[float, list]] = {}
+_SCAN_CACHE_TTL = 120  # seconds
 
 from src.data.models import (
     BacktestResult, ChartBar, ChartData, ChartPattern, PositionSize,
@@ -34,6 +39,11 @@ def scan(
     min_volume: int = Query(default=500_000, ge=0),
 ):
     """Run momentum scanner on the default universe."""
+    cache_key = f"scan_{top}_{min_price}_{max_price}_{min_volume}"
+    cached = _scan_cache.get(cache_key)
+    if cached and time.time() - cached[0] < _SCAN_CACHE_TTL:
+        return cached[1]
+
     symbols = get_default_universe()
     results, bars_map = scan_universe(
         symbols, top_n=top, min_price=min_price, max_price=max_price,
@@ -55,6 +65,7 @@ def scan(
     with ThreadPoolExecutor(max_workers=8) as executor:
         executor.map(_enrich, results)
 
+    _scan_cache[cache_key] = (time.time(), results)
     return results
 
 

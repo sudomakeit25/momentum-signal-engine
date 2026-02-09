@@ -24,7 +24,8 @@ def scan_universe(
     min_price: float | None = None,
     max_price: float | None = None,
     min_volume: int | None = None,
-) -> list[ScanResult]:
+    return_bars: bool = False,
+) -> list[ScanResult] | tuple[list[ScanResult], dict[str, pd.DataFrame]]:
     """Scan a list of symbols and return ranked momentum results.
 
     Args:
@@ -33,9 +34,11 @@ def scan_universe(
         min_price: Minimum price filter.
         max_price: Maximum price filter.
         min_volume: Minimum average volume filter.
+        return_bars: If True, also return the bars_map for reuse.
 
     Returns:
         List of ScanResult sorted by momentum score descending.
+        If return_bars=True, returns (results, bars_map) tuple.
     """
     top_n = top_n or settings.scan_top_n
     min_price = min_price or settings.scan_min_price
@@ -100,7 +103,10 @@ def scan_universe(
         )
 
     results.sort(key=lambda r: r.score, reverse=True)
-    return results[:top_n]
+    top_results = results[:top_n]
+    if return_bars:
+        return top_results, bars_map
+    return top_results
 
 
 def get_default_universe() -> list[str]:

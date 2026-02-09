@@ -54,7 +54,9 @@ def generate_signals(df: pd.DataFrame, symbol: str) -> list[Signal]:
     if len(df) < 50:
         return []
 
-    df = add_all_indicators(df)
+    # Skip indicator computation if already present
+    if "ema9" not in df.columns:
+        df = add_all_indicators(df)
     weekly = _weekly_trend(df)
     buys = _buy_signals(df, symbol)
     sells = _sell_signals(df, symbol)

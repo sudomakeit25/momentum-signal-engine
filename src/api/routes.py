@@ -1,5 +1,6 @@
 """FastAPI routes for the Momentum Signal Engine."""
 
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Query
 
 from src.backtest.engine import run_backtest
@@ -34,19 +35,26 @@ def scan(
 ):
     """Run momentum scanner on the default universe."""
     symbols = get_default_universe()
-    results = scan_universe(
-        symbols, top_n=top, min_price=min_price, max_price=max_price, min_volume=min_volume
+    results, bars_map = scan_universe(
+        symbols, top_n=top, min_price=min_price, max_price=max_price,
+        min_volume=min_volume, return_bars=True,
     )
-    # Enrich with signals
-    for result in results:
+
+    # Enrich with signals — reuse bars from scan, run in parallel
+    def _enrich(result: ScanResult) -> None:
         try:
-            df = client.get_bars(result.symbol, days=200)
+            df = bars_map.get(result.symbol)
+            if df is None or len(df) < 50:
+                return
             result.signals = generate_signals(df, result.symbol)
             result.setup_types.extend(detect_patterns(df))
-            # Deduplicate setup types
             result.setup_types = list(set(result.setup_types))
         except Exception:
             pass
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        executor.map(_enrich, results)
+
     return results
 
 

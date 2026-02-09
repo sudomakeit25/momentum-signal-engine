@@ -121,6 +121,12 @@ def get_multi_bars(
         _parse_barset(crypto_client.get_crypto_bars(request).df, crypto_symbols)
 
     _cache.set(cache_key, result)
+
+    # Seed individual symbol caches so get_bars() hits cache
+    for sym, sym_df in result.items():
+        individual_key = f"bars_{sym}_{timeframe}_{days}"
+        _cache.set(individual_key, sym_df)
+
     return result
 
 

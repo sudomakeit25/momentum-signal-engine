@@ -592,3 +592,65 @@ def place_trade(
         return {"status": "submitted", "order_id": str(order.id), "symbol": order.symbol}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+# --- Notification Config Endpoints ---
+
+from src.notifications.dispatcher import (
+    load_config as load_notification_config,
+    save_config as save_notification_config,
+    NotificationConfig,
+    send_sms,
+)
+
+
+@router.get("/notifications/config")
+def get_notification_config():
+    """Get current notification configuration."""
+    config = load_notification_config()
+    return config.to_dict()
+
+
+@router.post("/notifications/config")
+def set_notification_config(
+    webhook_url: str = Query(default=""),
+    webhook_platform: str = Query(default="discord"),
+    sms_to: str = Query(default=""),
+    auto_alerts_enabled: bool = Query(default=False),
+    min_confidence: float = Query(default=0.6, ge=0, le=1),
+):
+    """Save notification preferences."""
+    config = NotificationConfig(
+        webhook_url=webhook_url,
+        webhook_platform=webhook_platform,
+        sms_to=sms_to,
+        auto_alerts_enabled=auto_alerts_enabled,
+        min_confidence=min_confidence,
+    )
+    save_notification_config(config)
+    return {"status": "saved", "config": config.to_dict()}
+
+
+@router.post("/notifications/test-sms")
+def test_sms(
+    to: str = Query(..., description="Recipient phone number with country code, e.g. +15559876543"),
+):
+    """Send a test SMS to verify Twilio is configured correctly."""
+    from src.data.models import Signal, SignalAction, SetupType
+    from datetime import datetime
+
+    test_signal = Signal(
+        symbol="AAPL",
+        action=SignalAction.BUY,
+        setup_type=SetupType.BREAKOUT,
+        reason="Test signal from Momentum Signal Engine",
+        entry=150.00,
+        stop_loss=145.00,
+        target=165.00,
+        rr_ratio=3.0,
+        confidence=0.85,
+        timestamp=datetime.now(),
+    )
+
+    ok = send_sms(to, [test_signal])
+    return {"status": "sent" if ok else "error", "to": to}

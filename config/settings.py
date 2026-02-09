@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     default_risk_pct: float = 2.0
     min_rr_ratio: float = 2.0
 
+    # Twilio SMS
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_from_number: str = ""  # e.g. "+15551234567"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

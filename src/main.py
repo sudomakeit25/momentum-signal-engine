@@ -25,8 +25,10 @@ def _refresh_loop():
     from src.signals.patterns import detect_patterns
     from src.data.models import ScanResult
     from concurrent.futures import ThreadPoolExecutor
+    from src.notifications.dispatcher import dispatch_alerts
 
     symbols = get_default_universe()
+    _seen_signal_keys: set[str] = set()
 
     while not _stop_event.is_set():
         try:
@@ -53,6 +55,31 @@ def _refresh_loop():
 
             with ThreadPoolExecutor(max_workers=8) as executor:
                 executor.map(_enrich, results)
+
+            # --- Auto-dispatch new signals ---
+            all_signals = []
+            for r in results:
+                all_signals.extend(r.signals)
+
+            new_signals = []
+            current_keys = set()
+            for s in all_signals:
+                key = f"{s.symbol}:{s.action.value}:{s.entry:.2f}"
+                current_keys.add(key)
+                if key not in _seen_signal_keys:
+                    new_signals.append(s)
+
+            if new_signals:
+                try:
+                    dispatch_results = dispatch_alerts(new_signals)
+                    logger.info(
+                        "Auto-dispatch: %d new signals (webhook=%s, sms=%s)",
+                        len(new_signals), dispatch_results["webhook"], dispatch_results["sms"],
+                    )
+                except Exception as e:
+                    logger.warning("Auto-dispatch failed: %s", e)
+
+            _seen_signal_keys = current_keys
 
             cache_key = "scan_20_5.0_500.0_500000"
             _scan_cache[cache_key] = (time.time(), results)

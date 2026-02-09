@@ -48,6 +48,7 @@ export function CandlestickChart({
   showProjections = false,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
   useEffect(() => {
@@ -230,13 +231,17 @@ export function CandlestickChart({
       }
     }
 
-    // Chart patterns
+    // Chart patterns — build a time→description lookup for tooltip
+    type PatternHit = { description: string; bias: string; name: string; price: number };
+    const patternTimeMap = new Map<string, PatternHit[]>();
+
     if (showPatterns && ta) {
       for (const pattern of ta.patterns) {
         try {
           const patternColor =
             pattern.bias === "bullish" ? "#22c55e" :
             pattern.bias === "bearish" ? "#ef4444" : "#8b5cf6";
+          const patternName = pattern.pattern_type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
           if (pattern.boundary_points.length >= 2) {
             // Sort by time — lightweight-charts requires ascending order
@@ -260,6 +265,26 @@ export function CandlestickChart({
               });
               patternSeries.setData(deduped);
             }
+
+            // Register boundary point times for tooltip
+            for (const pt of deduped) {
+              const key = pt.time as string;
+              const hit: PatternHit = {
+                description: pattern.description,
+                bias: pattern.bias,
+                name: patternName,
+                price: pt.value,
+              };
+              const existing = patternTimeMap.get(key);
+              if (existing) {
+                // Avoid duplicate pattern names at same time
+                if (!existing.some((h) => h.name === patternName)) {
+                  existing.push(hit);
+                }
+              } else {
+                patternTimeMap.set(key, [hit]);
+              }
+            }
           }
           // Target price line
           if (pattern.target_price) {
@@ -276,6 +301,48 @@ export function CandlestickChart({
           // Skip patterns that can't be rendered
         }
       }
+    }
+
+    // Pattern tooltip on crosshair hover
+    if (patternTimeMap.size > 0) {
+      chart.subscribeCrosshairMove((param) => {
+        const tooltip = tooltipRef.current;
+        if (!tooltip || !containerRef.current) return;
+
+        if (!param.time || !param.point) {
+          tooltip.style.display = "none";
+          return;
+        }
+
+        const timeStr = param.time as string;
+        const hits = patternTimeMap.get(timeStr);
+
+        if (!hits || hits.length === 0) {
+          tooltip.style.display = "none";
+          return;
+        }
+
+        // Build tooltip content
+        const lines = hits.map((h) => {
+          const badge = h.bias === "bullish" ? "🟢" : h.bias === "bearish" ? "🔴" : "🟣";
+          return `<div style="margin-bottom:4px"><strong>${badge} ${h.name}</strong><br/><span style="color:#a1a1aa">${h.description}</span></div>`;
+        });
+
+        tooltip.innerHTML = lines.join("");
+        tooltip.style.display = "block";
+
+        // Position tooltip near cursor
+        const chartRect = containerRef.current.getBoundingClientRect();
+        let left = param.point.x + 16;
+        let top = param.point.y - 16;
+
+        // Keep tooltip within chart bounds
+        if (left + 280 > chartRect.width) left = param.point.x - 296;
+        if (top < 0) top = 0;
+
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+      });
     }
 
     // Price projections
@@ -308,5 +375,14 @@ export function CandlestickChart({
     };
   }, [bars, signals, showEma9, showEma21, showEma50, showEma200, showVwap, showRs, technicalAnalysis, showSupportResistance, showTrendlines, showPatterns, showProjections]);
 
-  return <div ref={containerRef} className="w-full" />;
+  return (
+    <div className="relative w-full">
+      <div ref={containerRef} className="w-full" />
+      <div
+        ref={tooltipRef}
+        style={{ display: "none" }}
+        className="pointer-events-none absolute z-50 max-w-[280px] rounded-lg border border-zinc-700 bg-zinc-900/95 px-3 py-2 text-xs shadow-xl backdrop-blur-sm"
+      />
+    </div>
+  );
 }

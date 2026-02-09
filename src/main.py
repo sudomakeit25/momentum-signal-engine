@@ -1,33 +1,75 @@
+import logging
 import os
 import threading
+import time
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config.settings import settings
-from src.api.routes import router
+from src.api.routes import router, _scan_cache, _SCAN_CACHE_TTL
 
 PORT = int(os.environ.get("PORT", 8000))
+logger = logging.getLogger("mse")
+
+_REFRESH_INTERVAL = 120  # seconds — match scan cache TTL
+_stop_event = threading.Event()
 
 
-def _warm_cache():
-    """Pre-fetch market data on startup so first /scan request is fast."""
-    try:
-        from src.data import client
-        from src.scanner.screener import get_default_universe
-        symbols = get_default_universe()
-        client.get_multi_bars(symbols, days=200)
-        client.get_bars("SPY", days=200)
-    except Exception:
-        pass  # Non-fatal: cache warming is best-effort
+def _refresh_loop():
+    """Continuously refresh market data and scan results in the background."""
+    from src.data import client
+    from src.scanner.screener import get_default_universe, scan_universe
+    from src.signals.generator import generate_signals
+    from src.signals.patterns import detect_patterns
+    from src.data.models import ScanResult
+    from concurrent.futures import ThreadPoolExecutor
+
+    symbols = get_default_universe()
+
+    while not _stop_event.is_set():
+        try:
+            # Refresh Alpaca bar data
+            client.get_bars("SPY", days=200)
+            bars_map = client.get_multi_bars(symbols, days=200)
+
+            # Run the default scan and cache the result
+            results, bars_map = scan_universe(
+                symbols, top_n=20, min_price=5.0, max_price=500.0,
+                min_volume=500_000, return_bars=True,
+            )
+
+            def _enrich(result: ScanResult) -> None:
+                try:
+                    df = bars_map.get(result.symbol)
+                    if df is None or len(df) < 50:
+                        return
+                    result.signals = generate_signals(df, result.symbol)
+                    result.setup_types.extend(detect_patterns(df))
+                    result.setup_types = list(set(result.setup_types))
+                except Exception:
+                    pass
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                executor.map(_enrich, results)
+
+            cache_key = "scan_20_5.0_500.0_500000"
+            _scan_cache[cache_key] = (time.time(), results)
+            logger.info("Background refresh complete: %d results cached", len(results))
+        except Exception as e:
+            logger.warning("Background refresh failed: %s", e)
+
+        _stop_event.wait(_REFRESH_INTERVAL)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Warm cache in background thread so server starts accepting requests immediately
-    threading.Thread(target=_warm_cache, daemon=True).start()
+    # Start background refresh thread
+    thread = threading.Thread(target=_refresh_loop, daemon=True)
+    thread.start()
     yield
+    _stop_event.set()
 
 
 app = FastAPI(

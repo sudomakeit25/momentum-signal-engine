@@ -127,6 +127,7 @@ class PriceProjection(BaseModel):
     confidence: float
     reason: str
     projection_type: str
+    estimated_days: int | None = None  # estimated trading days to reach target
 
 
 class TechnicalAnalysis(BaseModel):

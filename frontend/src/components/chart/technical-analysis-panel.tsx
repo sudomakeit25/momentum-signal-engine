@@ -98,17 +98,22 @@ export function TechnicalAnalysisPanel({ analysis }: TechnicalAnalysisPanelProps
           </h3>
           <div className="space-y-1">
             {analysis.projections.map((p, i) => (
-              <div key={i} className="flex items-center justify-between text-xs">
+              <div key={i} className="flex items-center justify-between gap-2 text-xs">
                 <span
-                  className={
+                  className={`min-w-[60px] ${
                     p.projection_type === "bullish"
                       ? "text-green-300"
                       : "text-red-300"
-                  }
+                  }`}
                 >
                   ${p.price.toFixed(2)}
                 </span>
-                <span className="max-w-[60%] truncate text-zinc-500">{p.reason}</span>
+                <span className="flex-1 truncate text-zinc-500">{p.reason}</span>
+                {p.estimated_days && (
+                  <span className="whitespace-nowrap text-zinc-500">
+                    ~{p.estimated_days}d
+                  </span>
+                )}
                 <span className="text-zinc-600">
                   {Math.round(p.confidence * 100)}%
                 </span>

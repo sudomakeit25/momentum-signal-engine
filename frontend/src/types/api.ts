@@ -125,6 +125,7 @@ export interface PriceProjection {
   confidence: number;
   reason: string;
   projection_type: "bullish" | "bearish";
+  estimated_days: number | null;
 }
 
 export interface TechnicalAnalysis {

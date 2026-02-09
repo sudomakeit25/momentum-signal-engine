@@ -10,7 +10,7 @@ def fibonacci_levels(df: pd.DataFrame) -> list[dict]:
     """Calculate Fibonacci retracement and extension levels from the most
     significant recent swing.
 
-    Returns list of {price, confidence, reason, projection_type}.
+    Returns list of {price, confidence, reason, projection_type, estimated_days}.
     """
     if len(df) < 30:
         return []
@@ -30,8 +30,20 @@ def fibonacci_levels(df: pd.DataFrame) -> list[dict]:
     if swing_range <= 0:
         return []
 
+    # Swing duration in bars — used to estimate timeframes
+    swing_bars = abs(recent_high["index"] - recent_low["index"])
+
     last_close = float(df["close"].iloc[-1])
     projections = []
+
+    def _estimate_days(target_price: float) -> int:
+        """Estimate trading days based on distance relative to swing speed."""
+        if swing_bars == 0 or swing_range == 0:
+            return 20
+        price_dist = abs(target_price - last_close)
+        # Proportional: if swing covered X price in Y bars, target distance scales similarly
+        days = int(price_dist / swing_range * swing_bars)
+        return max(5, min(days, 120))  # clamp to 5-120 days
 
     # Determine if we're in an upswing or downswing
     if recent_high["index"] > recent_low["index"]:
@@ -44,12 +56,13 @@ def fibonacci_levels(df: pd.DataFrame) -> list[dict]:
         ]
         for ratio, label in fib_ratios:
             price = recent_high["price"] - swing_range * ratio
-            if price < last_close:  # Only show levels below current price (support)
+            if price < last_close:
                 projections.append({
                     "price": round(price, 2),
                     "confidence": 0.5 + (0.15 if ratio in (0.382, 0.618) else 0),
                     "reason": label,
                     "projection_type": "bearish",
+                    "estimated_days": _estimate_days(price),
                 })
 
         # Fibonacci extensions (bullish targets)
@@ -65,6 +78,7 @@ def fibonacci_levels(df: pd.DataFrame) -> list[dict]:
                     "confidence": 0.45,
                     "reason": label,
                     "projection_type": "bullish",
+                    "estimated_days": _estimate_days(price),
                 })
     else:
         # Downswing: retracements are resistance levels, extensions are bearish targets
@@ -82,6 +96,7 @@ def fibonacci_levels(df: pd.DataFrame) -> list[dict]:
                     "confidence": 0.5 + (0.15 if ratio in (0.382, 0.618) else 0),
                     "reason": label,
                     "projection_type": "bullish",
+                    "estimated_days": _estimate_days(price),
                 })
 
         extensions = [
@@ -96,6 +111,7 @@ def fibonacci_levels(df: pd.DataFrame) -> list[dict]:
                     "confidence": 0.45,
                     "reason": label,
                     "projection_type": "bearish",
+                    "estimated_days": _estimate_days(price),
                 })
 
     return projections
@@ -111,20 +127,31 @@ def project_price_zones(
     Returns list of {price, confidence, reason, projection_type}.
     """
     projections: list[dict] = []
+    last_close = float(df["close"].iloc[-1])
 
     # 1. Pattern-based targets
     for pattern in patterns:
         if pattern.get("target_price"):
-            last_close = float(df["close"].iloc[-1])
             is_bullish = pattern["target_price"] > last_close
+            # Estimate: pattern width (boundary time span) ≈ time to reach target
+            bp = pattern.get("boundary_points", [])
+            if len(bp) >= 2:
+                first_idx = next((i for i, row in enumerate(df.index)
+                                  if str(row)[:10] >= str(bp[0].get("time", ""))[:10]), 0)
+                last_idx = next((i for i, row in enumerate(df.index)
+                                 if str(row)[:10] >= str(bp[-1].get("time", ""))[:10]), len(df) - 1)
+                pattern_width = max(last_idx - first_idx, 10)
+            else:
+                pattern_width = 20
             projections.append({
                 "price": pattern["target_price"],
                 "confidence": pattern["confidence"],
                 "reason": f"{pattern['pattern_type'].replace('_', ' ').title()} target",
                 "projection_type": "bullish" if is_bullish else "bearish",
+                "estimated_days": min(pattern_width, 90),
             })
 
-    # 2. Trendline projection endpoints
+    # 2. Trendline projection endpoints (always 10 bars ahead)
     for line in trendline_analysis.get("uptrends", []):
         if line.get("projection"):
             last_proj = line["projection"][-1]
@@ -133,6 +160,7 @@ def project_price_zones(
                 "confidence": min(0.3 + line["touches"] * 0.1, 0.7),
                 "reason": f"Uptrend projection ({line['touches']} touches)",
                 "projection_type": "bullish",
+                "estimated_days": len(line["projection"]),
             })
 
     for line in trendline_analysis.get("downtrends", []):
@@ -144,6 +172,7 @@ def project_price_zones(
                     "confidence": min(0.3 + line["touches"] * 0.1, 0.7),
                     "reason": f"Downtrend projection ({line['touches']} touches)",
                     "projection_type": "bearish",
+                    "estimated_days": len(line["projection"]),
                 })
 
     # 3. Fibonacci levels

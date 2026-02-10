@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     smtp_email: str = ""  # e.g. "yourname@gmail.com"
     smtp_password: str = ""  # Gmail app password (not your login password)
 
+    # AWS
+    aws_region: str = "us-east-1"
+    cache_bucket: str = ""  # S3 bucket for cache (Lambda mode)
+    config_table: str = "mse-config"  # DynamoDB table (Lambda mode)
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

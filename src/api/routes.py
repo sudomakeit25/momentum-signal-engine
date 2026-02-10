@@ -602,6 +602,7 @@ from src.notifications.dispatcher import (
     NotificationConfig,
     send_sms,
     send_email_sms,
+    send_sns_sms,
     CARRIER_GATEWAYS,
 )
 
@@ -687,6 +688,8 @@ def test_sms(
         if not config.sms_carrier:
             return {"status": "error", "message": "No carrier selected. Choose your carrier and save."}
         ok = send_email_sms(to, config.sms_carrier, [test_signal])
+    elif config.sms_method == "sns":
+        ok = send_sns_sms(to, [test_signal])
     else:
         ok = send_sms(to, [test_signal])
 

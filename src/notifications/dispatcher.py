@@ -230,6 +230,33 @@ def send_sms(to_phone: str, signals: list) -> bool:
         return False
 
 
+def send_sns_sms(to_phone: str, signals: list) -> bool:
+    """Send SMS via AWS SNS. Native to AWS, ~$0.00645/SMS in the US."""
+    if not to_phone or not signals:
+        return False
+
+    try:
+        import boto3
+        from config.settings import settings
+        sns = boto3.client("sns", region_name=settings.aws_region)
+        body = _format_sms_body(signals)
+        response = sns.publish(
+            PhoneNumber=to_phone,
+            Message=body,
+            MessageAttributes={
+                "AWS.SNS.SMS.SMSType": {
+                    "DataType": "String",
+                    "StringValue": "Transactional",
+                },
+            },
+        )
+        logger.info("SNS SMS sent to %s: MessageId %s", to_phone, response["MessageId"])
+        return True
+    except Exception as e:
+        logger.warning("SNS SMS error: %s", e)
+        return False
+
+
 def dispatch_alerts(signals: list) -> dict:
     """Send alerts through all enabled channels. Returns status per channel."""
     config = load_config()
@@ -261,6 +288,8 @@ def dispatch_alerts(signals: list) -> dict:
             results["sms"] = send_email_sms(config.sms_to, config.sms_carrier, filtered)
         elif config.sms_method == "twilio":
             results["sms"] = send_sms(config.sms_to, filtered)
+        elif config.sms_method == "sns":
+            results["sms"] = send_sns_sms(config.sms_to, filtered)
     elif config.sms_to and not config.sms_consent:
         logger.info("SMS skipped: consent not given")
     elif not config.sms_to:

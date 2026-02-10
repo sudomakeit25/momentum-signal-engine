@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Bell, Send, Check, AlertCircle, MessageSquare, Smartphone, Zap, Mail } from "lucide-react";
+import { Bell, Send, Check, AlertCircle, MessageSquare, Smartphone, Zap, Mail, Cloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -10,7 +10,7 @@ interface NotificationConfig {
   webhook_url: string;
   webhook_platform: "discord" | "telegram" | "slack";
   sms_to: string;
-  sms_method: "twilio" | "email_gateway";
+  sms_method: "twilio" | "email_gateway" | "sns";
   sms_carrier: string;
   sms_consent: boolean;
   sms_consent_timestamp: string;
@@ -340,6 +340,18 @@ export default function NotificationsPage() {
               <Smartphone className="h-3 w-3" />
               Twilio
             </button>
+            <button
+              onClick={() => setConfig({ ...config, sms_method: "sns" })}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                config.sms_method === "sns"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+              )}
+            >
+              <Cloud className="h-3 w-3" />
+              AWS SNS
+            </button>
           </div>
         </div>
 
@@ -364,12 +376,14 @@ export default function NotificationsPage() {
         <p className="text-xs text-zinc-500">
           {config.sms_method === "email_gateway"
             ? "Sends text messages via your carrier\u2019s email-to-SMS gateway. Free \u2014 just needs a Gmail account with an app password set on the server (SMTP_EMAIL, SMTP_PASSWORD)."
+            : config.sms_method === "sns"
+            ? "Sends text messages via AWS SNS. ~$0.00645 per SMS in the US. Uses your AWS credentials (configured via environment variables or IAM role)."
             : "Sends text messages via Twilio API. Requires TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER on the server."}
         </p>
 
         <div>
           <label className="mb-1 block text-xs text-zinc-500">
-            Your Phone Number {config.sms_method === "email_gateway" ? "(10-digit US number)" : "(with country code)"}
+            Your Phone Number {config.sms_method === "email_gateway" ? "(10-digit US number)" : "(with country code, e.g. +1...)"}
           </label>
           <input
             value={config.sms_to}
@@ -512,6 +526,21 @@ SMTP_PASSWORD=xxxx xxxx xxxx xxxx`}
 TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_FROM_NUMBER=+15551234567`}
             </pre>
+          </div>
+
+          <div>
+            <h3 className="font-semibold text-emerald-300">SMS via AWS SNS (~$0.006/msg)</h3>
+            <ol className="ml-4 list-decimal space-y-1">
+              <li>Configure AWS credentials (env vars, IAM role, or ~/.aws/credentials)</li>
+              <li>Ensure your AWS account has SNS SMS sending enabled</li>
+              <li>Optionally set the region (defaults to us-east-1):</li>
+            </ol>
+            <pre className="mt-1 rounded bg-zinc-800 p-2 text-[10px] text-zinc-400">
+{`AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=AKIAxxxxxxxxxxxxxxxx
+AWS_SECRET_ACCESS_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}
+            </pre>
+            <p className="mt-1">When deployed on AWS Lambda, credentials are automatic via the execution role.</p>
           </div>
         </div>
       </div>

@@ -1,9 +1,18 @@
 import hashlib
+import os
 import pickle
 import time
 from pathlib import Path
 
 from config.settings import settings
+
+
+def get_cache():
+    """Return the appropriate cache backend: S3Cache on Lambda, local Cache otherwise."""
+    if os.environ.get("AWS_LAMBDA") and settings.cache_bucket:
+        from src.data.s3_cache import S3Cache
+        return S3Cache(bucket=settings.cache_bucket, region=settings.aws_region)
+    return Cache()
 
 
 class Cache:

@@ -1,20 +1,13 @@
 """Notification dispatcher: webhook (Discord/Telegram/Slack) + SMS (Twilio / Email Gateway)."""
 
 import logging
-import json
 import smtplib
-import threading
 from dataclasses import dataclass
 from email.mime.text import MIMEText
-from pathlib import Path
 
 import requests as http_requests
 
 logger = logging.getLogger("mse.notifications")
-
-# Persistent config file path (survives restarts on disk-based deploys)
-_CONFIG_PATH = Path(".notification_config.json")
-_config_lock = threading.Lock()
 
 # Email-to-SMS carrier gateways (phone_number@gateway → delivers as SMS)
 CARRIER_GATEWAYS: dict[str, str] = {
@@ -76,21 +69,18 @@ class NotificationConfig:
 
 
 def load_config() -> NotificationConfig:
-    """Load config from disk, or return defaults."""
-    with _config_lock:
-        if _CONFIG_PATH.exists():
-            try:
-                data = json.loads(_CONFIG_PATH.read_text())
-                return NotificationConfig.from_dict(data)
-            except Exception:
-                pass
-        return NotificationConfig()
+    """Load config from storage (DynamoDB on Lambda, local file otherwise)."""
+    from src.data.storage import load_config_dict
+    data = load_config_dict()
+    if data:
+        return NotificationConfig.from_dict(data)
+    return NotificationConfig()
 
 
 def save_config(config: NotificationConfig) -> None:
-    """Persist config to disk."""
-    with _config_lock:
-        _CONFIG_PATH.write_text(json.dumps(config.to_dict(), indent=2))
+    """Persist config to storage (DynamoDB on Lambda, local file otherwise)."""
+    from src.data.storage import save_config_dict
+    save_config_dict(config.to_dict())
 
 
 def send_webhook(url: str, platform: str, signals: list) -> bool:

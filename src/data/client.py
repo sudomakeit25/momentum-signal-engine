@@ -9,9 +9,9 @@ from alpaca.trading.requests import GetAssetsRequest
 from alpaca.trading.enums import AssetClass, AssetStatus
 
 from config.settings import settings
-from src.data.cache import Cache
+from src.data.cache import get_cache
 
-_cache = Cache()
+_cache = get_cache()
 
 
 def _get_data_client() -> StockHistoricalDataClient:

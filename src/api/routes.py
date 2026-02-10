@@ -1,5 +1,6 @@
 """FastAPI routes for the Momentum Signal Engine."""
 
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Query
@@ -8,7 +9,7 @@ from src.backtest.engine import run_backtest
 from src.data import client
 import pandas as pd
 
-# In-memory cache for scan results (avoids full recomputation)
+# In-memory scan cache (used locally and as write-through for Lambda)
 _scan_cache: dict[str, tuple[float, list]] = {}
 _SCAN_CACHE_TTL = 120  # seconds
 

@@ -229,11 +229,21 @@ def dispatch_alerts(signals: list) -> dict:
     config = load_config()
     results = {"webhook": False, "sms": False}
 
+    logger.info(
+        "dispatch_alerts called: %d signals, auto_enabled=%s, sms_to=%s, sms_consent=%s, sms_method=%s, sms_carrier=%s, webhook_url=%s",
+        len(signals), config.auto_alerts_enabled, config.sms_to,
+        config.sms_consent, config.sms_method, config.sms_carrier,
+        config.webhook_url[:30] + "..." if config.webhook_url else "",
+    )
+
     if not config.auto_alerts_enabled:
+        logger.info("Auto-alerts disabled, skipping dispatch")
         return results
 
     # Filter by minimum confidence
     filtered = [s for s in signals if s.confidence >= config.min_confidence]
+    logger.info("After confidence filter (>= %.0f%%): %d of %d signals",
+                config.min_confidence * 100, len(filtered), len(signals))
     if not filtered:
         return results
 
@@ -245,5 +255,9 @@ def dispatch_alerts(signals: list) -> dict:
             results["sms"] = send_email_sms(config.sms_to, config.sms_carrier, filtered)
         elif config.sms_method == "twilio":
             results["sms"] = send_sms(config.sms_to, filtered)
+    elif config.sms_to and not config.sms_consent:
+        logger.info("SMS skipped: consent not given")
+    elif not config.sms_to:
+        logger.info("SMS skipped: no phone number configured")
 
     return results

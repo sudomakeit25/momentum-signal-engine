@@ -29,6 +29,7 @@ def _refresh_loop():
 
     symbols = get_default_universe()
     _seen_signal_keys: set[str] = set()
+    _first_cycle = True
 
     while not _stop_event.is_set():
         try:
@@ -61,23 +62,34 @@ def _refresh_loop():
             for r in results:
                 all_signals.extend(r.signals)
 
-            new_signals = []
+            logger.info("Signal check: %d total signals from %d results", len(all_signals), len(results))
+
             current_keys = set()
             for s in all_signals:
                 key = f"{s.symbol}:{s.action.value}:{s.entry:.2f}"
                 current_keys.add(key)
-                if key not in _seen_signal_keys:
-                    new_signals.append(s)
+
+            if _first_cycle:
+                # On first cycle, send all signals as alerts (nothing to compare against)
+                new_signals = all_signals
+                _first_cycle = False
+                logger.info("First cycle: treating all %d signals as new", len(new_signals))
+            else:
+                new_signals = [s for s in all_signals
+                               if f"{s.symbol}:{s.action.value}:{s.entry:.2f}" not in _seen_signal_keys]
 
             if new_signals:
+                logger.info("Dispatching %d new signals...", len(new_signals))
                 try:
                     dispatch_results = dispatch_alerts(new_signals)
                     logger.info(
-                        "Auto-dispatch: %d new signals (webhook=%s, sms=%s)",
-                        len(new_signals), dispatch_results["webhook"], dispatch_results["sms"],
+                        "Auto-dispatch result: webhook=%s, sms=%s",
+                        dispatch_results["webhook"], dispatch_results["sms"],
                     )
                 except Exception as e:
                     logger.warning("Auto-dispatch failed: %s", e)
+            else:
+                logger.info("No new signals to dispatch")
 
             _seen_signal_keys = current_keys
 

@@ -11,8 +11,19 @@ from config.settings import settings
 from src.api.routes import router, _scan_cache, _SCAN_CACHE_TTL
 
 PORT = int(os.environ.get("PORT", 8000))
+
+# Configure logging — uvicorn overrides basicConfig, so set levels explicitly
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("mse")
+logger.setLevel(logging.INFO)
+logging.getLogger("mse.notifications").setLevel(logging.INFO)
+
+# Ensure our loggers have a handler if basicConfig was overridden
+if not logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+    logger.addHandler(_handler)
+    logging.getLogger("mse.notifications").addHandler(_handler)
 
 _REFRESH_INTERVAL = 120  # seconds — match scan cache TTL
 _stop_event = threading.Event()

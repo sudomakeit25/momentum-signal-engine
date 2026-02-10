@@ -39,7 +39,7 @@ function useTrade() {
   return useMutation({
     mutationFn: (params: { symbol: string; qty: number; side: string }) =>
       fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/trade?symbol=${params.symbol}&qty=${params.qty}&side=${params.side}`,
+        `${process.env.NEXT_PUBLIC_API_URL || "/api"}/trade?symbol=${params.symbol}&qty=${params.qty}&side=${params.side}`,
         { method: "POST" }
       ).then((r) => r.json()),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["portfolio"] }),

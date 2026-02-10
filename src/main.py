@@ -11,6 +11,7 @@ from config.settings import settings
 from src.api.routes import router, _scan_cache, _SCAN_CACHE_TTL
 
 PORT = int(os.environ.get("PORT", 8000))
+_IS_LAMBDA = bool(os.environ.get("AWS_LAMBDA"))
 
 # Configure logging — uvicorn overrides basicConfig, so set levels explicitly
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -116,11 +117,13 @@ def _refresh_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start background refresh thread
-    thread = threading.Thread(target=_refresh_loop, daemon=True)
-    thread.start()
+    if not _IS_LAMBDA:
+        # Local dev: start background refresh thread
+        thread = threading.Thread(target=_refresh_loop, daemon=True)
+        thread.start()
     yield
-    _stop_event.set()
+    if not _IS_LAMBDA:
+        _stop_event.set()
 
 
 app = FastAPI(
@@ -140,7 +143,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router)
+# On Lambda, API Gateway strips /api prefix; locally no prefix needed
+_api_prefix = "/api" if _IS_LAMBDA else ""
+app.include_router(router, prefix=_api_prefix)
 
 if __name__ == "__main__":
     import uvicorn

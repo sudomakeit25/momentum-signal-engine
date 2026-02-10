@@ -55,7 +55,7 @@ export default function NotificationsPage() {
   const [message, setMessage] = useState("");
   const [loaded, setLoaded] = useState(false);
 
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "/api";
 
   // Load config from backend on mount
   useEffect(() => {

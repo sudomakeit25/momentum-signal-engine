@@ -10,6 +10,8 @@ interface NotificationConfig {
   webhook_url: string;
   webhook_platform: "discord" | "telegram" | "slack";
   sms_to: string;
+  sms_consent: boolean;
+  sms_consent_timestamp: string;
   auto_alerts_enabled: boolean;
   min_confidence: number;
 }
@@ -18,6 +20,8 @@ const DEFAULT_CONFIG: NotificationConfig = {
   webhook_url: "",
   webhook_platform: "discord",
   sms_to: "",
+  sms_consent: false,
+  sms_consent_timestamp: "",
   auto_alerts_enabled: false,
   min_confidence: 0.6,
 };
@@ -42,6 +46,8 @@ export default function NotificationsPage() {
           webhook_url: data.webhook_url || "",
           webhook_platform: data.webhook_platform || "discord",
           sms_to: data.sms_to || "",
+          sms_consent: data.sms_consent || false,
+          sms_consent_timestamp: data.sms_consent_timestamp || "",
           auto_alerts_enabled: data.auto_alerts_enabled || false,
           min_confidence: data.min_confidence ?? 0.6,
         });
@@ -57,6 +63,7 @@ export default function NotificationsPage() {
         webhook_url: config.webhook_url,
         webhook_platform: config.webhook_platform,
         sms_to: config.sms_to,
+        sms_consent: String(config.sms_consent),
         auto_alerts_enabled: String(config.auto_alerts_enabled),
         min_confidence: String(config.min_confidence),
       });
@@ -298,15 +305,42 @@ export default function NotificationsPage() {
           />
         </div>
 
+        {/* SMS Consent Opt-In */}
+        <div className="rounded-md border border-zinc-700 bg-zinc-800/50 p-3 space-y-2">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={config.sms_consent}
+              onChange={(e) => setConfig({ ...config, sms_consent: e.target.checked })}
+              className="mt-0.5 h-4 w-4 rounded border-zinc-600 accent-emerald-500"
+            />
+            <span className="text-xs text-zinc-300">
+              I agree to receive automated SMS alerts from Momentum Signal Engine at the phone number
+              provided above. Message frequency varies based on market activity. Message and data rates
+              may apply. Reply STOP to unsubscribe at any time.
+            </span>
+          </label>
+          {config.sms_consent && config.sms_consent_timestamp && (
+            <p className="ml-7 text-[10px] text-zinc-600">
+              Consent recorded: {new Date(config.sms_consent_timestamp).toLocaleString()}
+            </p>
+          )}
+        </div>
+
         <Button
           size="sm"
           variant="outline"
           onClick={testSms}
-          disabled={!config.sms_to || smsTestStatus === "sending"}
+          disabled={!config.sms_to || !config.sms_consent || smsTestStatus === "sending"}
         >
           <Smartphone className="mr-1 h-3 w-3" />
           {smsTestStatus === "sending" ? "Sending..." : "Send Test SMS"}
         </Button>
+        {!config.sms_consent && config.sms_to && (
+          <p className="text-[10px] text-amber-400">
+            Please check the consent box above before sending SMS.
+          </p>
+        )}
       </div>
 
       {/* Status message */}

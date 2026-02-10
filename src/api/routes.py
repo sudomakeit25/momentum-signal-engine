@@ -616,14 +616,28 @@ def set_notification_config(
     webhook_url: str = Query(default=""),
     webhook_platform: str = Query(default="discord"),
     sms_to: str = Query(default=""),
+    sms_consent: bool = Query(default=False),
     auto_alerts_enabled: bool = Query(default=False),
     min_confidence: float = Query(default=0.6, ge=0, le=1),
 ):
     """Save notification preferences."""
+    from datetime import datetime, timezone
+
+    # Record consent timestamp when user opts in
+    existing = load_notification_config()
+    consent_ts = existing.sms_consent_timestamp
+    if sms_consent and not existing.sms_consent:
+        # Fresh opt-in — record the timestamp
+        consent_ts = datetime.now(timezone.utc).isoformat()
+    elif not sms_consent:
+        consent_ts = ""
+
     config = NotificationConfig(
         webhook_url=webhook_url,
         webhook_platform=webhook_platform,
         sms_to=sms_to,
+        sms_consent=sms_consent,
+        sms_consent_timestamp=consent_ts,
         auto_alerts_enabled=auto_alerts_enabled,
         min_confidence=min_confidence,
     )
@@ -636,6 +650,11 @@ def test_sms(
     to: str = Query(..., description="Recipient phone number with country code, e.g. +15559876543"),
 ):
     """Send a test SMS to verify Twilio is configured correctly."""
+    # Verify consent before sending
+    config = load_notification_config()
+    if not config.sms_consent:
+        return {"status": "error", "message": "SMS consent not given. Please opt in first."}
+
     from src.data.models import Signal, SignalAction, SetupType
     from datetime import datetime
 

@@ -21,6 +21,8 @@ class NotificationConfig:
     webhook_url: str = ""
     webhook_platform: str = "discord"  # discord | telegram | slack
     sms_to: str = ""  # recipient phone e.g. "+15559876543"
+    sms_consent: bool = False  # user opted in to receive SMS
+    sms_consent_timestamp: str = ""  # ISO 8601 timestamp of consent
     auto_alerts_enabled: bool = False
     min_confidence: float = 0.6  # only alert on signals >= this confidence
 
@@ -29,6 +31,8 @@ class NotificationConfig:
             "webhook_url": self.webhook_url,
             "webhook_platform": self.webhook_platform,
             "sms_to": self.sms_to,
+            "sms_consent": self.sms_consent,
+            "sms_consent_timestamp": self.sms_consent_timestamp,
             "auto_alerts_enabled": self.auto_alerts_enabled,
             "min_confidence": self.min_confidence,
         }
@@ -39,6 +43,8 @@ class NotificationConfig:
             webhook_url=d.get("webhook_url", ""),
             webhook_platform=d.get("webhook_platform", "discord"),
             sms_to=d.get("sms_to", ""),
+            sms_consent=d.get("sms_consent", False),
+            sms_consent_timestamp=d.get("sms_consent_timestamp", ""),
             auto_alerts_enabled=d.get("auto_alerts_enabled", False),
             min_confidence=d.get("min_confidence", 0.6),
         )
@@ -160,7 +166,7 @@ def dispatch_alerts(signals: list) -> dict:
     if config.webhook_url:
         results["webhook"] = send_webhook(config.webhook_url, config.webhook_platform, filtered)
 
-    if config.sms_to:
+    if config.sms_to and config.sms_consent:
         results["sms"] = send_sms(config.sms_to, filtered)
 
     return results

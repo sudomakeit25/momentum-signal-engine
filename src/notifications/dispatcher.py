@@ -139,21 +139,23 @@ def send_webhook(url: str, platform: str, signals: list) -> bool:
 
 
 def _format_sms_body(signals: list) -> str:
-    """Build a short SMS body. Carrier gateways often cap at 160 chars."""
+    """Build a short SMS body. Carrier gateways cap at 160 chars."""
     lines = ["MSE Alert"]
     for s in signals:
         arrow = "+" if s.action.value == "BUY" else "-"
-        lines.append(f"{arrow}{s.symbol} {s.action.value} ${s.entry:.2f} {s.confidence*100:.0f}%")
-    body = "\n".join(lines)
-    if len(body) > 155:
-        body = body[:152] + "..."
-    return body
+        line = f"{arrow}{s.symbol} {s.action.value} ${s.entry:.2f} {s.confidence*100:.0f}%"
+        # Stop adding lines if we'd exceed 155 chars
+        if len("\n".join(lines + [line])) > 155:
+            break
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def send_email_sms(to_phone: str, carrier: str, signals: list) -> bool:
-    """Send SMS via email-to-SMS carrier gateway. Free, no Twilio needed.
+    """Send a single SMS via email-to-SMS carrier gateway (free, no Twilio).
 
-    Sends in batches of 3 signals per message to stay under 160-char gateway limits.
+    Sends one message with top signals that fit in 160 chars to avoid
+    carrier rate-limiting on multiple rapid messages.
     """
     if not to_phone or not carrier or not signals:
         return False
@@ -178,28 +180,22 @@ def send_email_sms(to_phone: str, carrier: str, signals: list) -> bool:
         return False
 
     to_addr = f"{digits}@{gateway}"
-
-    # Batch signals (max 3 per SMS to stay under 160 chars)
-    batch_size = 3
-    batches = [signals[i:i + batch_size] for i in range(0, len(signals), batch_size)]
-    any_sent = False
+    # Sort by confidence and send top signals that fit in one message
+    sorted_signals = sorted(signals, key=lambda s: s.confidence, reverse=True)
+    body = _format_sms_body(sorted_signals)
 
     try:
+        msg = MIMEText(body)
+        msg["From"] = settings.smtp_email
+        msg["To"] = to_addr
+        msg["Subject"] = ""
+
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(settings.smtp_email, settings.smtp_password)
+            server.send_message(msg)
 
-            for batch in batches:
-                body = _format_sms_body(batch)
-                msg = MIMEText(body)
-                msg["From"] = settings.smtp_email
-                msg["To"] = to_addr
-                msg["Subject"] = ""
-                server.send_message(msg)
-                any_sent = True
-
-        logger.info("Email SMS sent to %s via %s: %d messages for %d signals",
-                     to_addr, carrier, len(batches), len(signals))
-        return any_sent
+        logger.info("Email SMS sent to %s via %s (%d chars)", to_addr, carrier, len(body))
+        return True
     except Exception as e:
         logger.warning("Email SMS error: %s", e)
         return False

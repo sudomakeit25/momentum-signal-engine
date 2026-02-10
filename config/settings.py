@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_from_number: str = ""  # e.g. "+15551234567"
 
+    # Email-to-SMS gateway (free alternative to Twilio)
+    smtp_email: str = ""  # e.g. "yourname@gmail.com"
+    smtp_password: str = ""  # Gmail app password (not your login password)
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

@@ -1,9 +1,11 @@
-"""Notification dispatcher: webhook (Discord/Telegram/Slack) + SMS (Twilio)."""
+"""Notification dispatcher: webhook (Discord/Telegram/Slack) + SMS (Twilio / Email Gateway)."""
 
 import logging
 import json
+import smtplib
 import threading
 from dataclasses import dataclass
+from email.mime.text import MIMEText
 from pathlib import Path
 
 import requests as http_requests
@@ -14,13 +16,32 @@ logger = logging.getLogger("mse.notifications")
 _CONFIG_PATH = Path(".notification_config.json")
 _config_lock = threading.Lock()
 
+# Email-to-SMS carrier gateways (phone_number@gateway → delivers as SMS)
+CARRIER_GATEWAYS: dict[str, str] = {
+    "att": "txt.att.net",
+    "tmobile": "tmomail.net",
+    "verizon": "vtext.com",
+    "sprint": "messaging.sprintpcs.com",
+    "boost": "sms.myboostmobile.com",
+    "cricket": "sms.cricketwireless.net",
+    "metro": "mymetropcs.com",
+    "uscellular": "email.uscc.net",
+    "virgin": "vmobl.com",
+    "google_fi": "msg.fi.google.com",
+    "mint": "tmomail.net",
+    "visible": "vtext.com",
+    "xfinity": "vtext.com",
+}
+
 
 @dataclass
 class NotificationConfig:
     """Notification preferences — saved to disk."""
     webhook_url: str = ""
     webhook_platform: str = "discord"  # discord | telegram | slack
-    sms_to: str = ""  # recipient phone e.g. "+15559876543"
+    sms_to: str = ""  # recipient phone e.g. "+15559876543" or "5559876543"
+    sms_method: str = "email_gateway"  # "twilio" | "email_gateway"
+    sms_carrier: str = ""  # carrier key from CARRIER_GATEWAYS
     sms_consent: bool = False  # user opted in to receive SMS
     sms_consent_timestamp: str = ""  # ISO 8601 timestamp of consent
     auto_alerts_enabled: bool = False
@@ -31,6 +52,8 @@ class NotificationConfig:
             "webhook_url": self.webhook_url,
             "webhook_platform": self.webhook_platform,
             "sms_to": self.sms_to,
+            "sms_method": self.sms_method,
+            "sms_carrier": self.sms_carrier,
             "sms_consent": self.sms_consent,
             "sms_consent_timestamp": self.sms_consent_timestamp,
             "auto_alerts_enabled": self.auto_alerts_enabled,
@@ -43,6 +66,8 @@ class NotificationConfig:
             webhook_url=d.get("webhook_url", ""),
             webhook_platform=d.get("webhook_platform", "discord"),
             sms_to=d.get("sms_to", ""),
+            sms_method=d.get("sms_method", "email_gateway"),
+            sms_carrier=d.get("sms_carrier", ""),
             sms_consent=d.get("sms_consent", False),
             sms_consent_timestamp=d.get("sms_consent_timestamp", ""),
             auto_alerts_enabled=d.get("auto_alerts_enabled", False),
@@ -113,6 +138,63 @@ def send_webhook(url: str, platform: str, signals: list) -> bool:
         return False
 
 
+def _format_sms_body(signals: list) -> str:
+    """Build the SMS message body from a list of signals."""
+    lines = ["MSE Signal Alert\n"]
+    for s in signals:
+        arrow = "+" if s.action.value == "BUY" else "-"
+        lines.append(f"{arrow} {s.symbol} {s.action.value} ${s.entry:.2f} ({s.confidence*100:.0f}%) R:R {s.rr_ratio:.1f}")
+    body = "\n".join(lines)
+    # SMS max ~160 chars per segment; keep under 480 for 3-segment SMS
+    if len(body) > 460:
+        body = body[:457] + "..."
+    return body
+
+
+def send_email_sms(to_phone: str, carrier: str, signals: list) -> bool:
+    """Send SMS via email-to-SMS carrier gateway. Free, no Twilio needed."""
+    if not to_phone or not carrier or not signals:
+        return False
+
+    gateway = CARRIER_GATEWAYS.get(carrier)
+    if not gateway:
+        logger.warning("Email SMS skipped: unknown carrier '%s'", carrier)
+        return False
+
+    from config.settings import settings
+    if not settings.smtp_email or not settings.smtp_password:
+        logger.warning("Email SMS skipped: SMTP_EMAIL / SMTP_PASSWORD not configured")
+        return False
+
+    # Strip non-digit chars from phone number
+    digits = "".join(c for c in to_phone if c.isdigit())
+    # Remove leading country code '1' if 11 digits
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    if len(digits) != 10:
+        logger.warning("Email SMS skipped: invalid phone number '%s'", to_phone)
+        return False
+
+    to_addr = f"{digits}@{gateway}"
+    body = _format_sms_body(signals)
+
+    try:
+        msg = MIMEText(body)
+        msg["From"] = settings.smtp_email
+        msg["To"] = to_addr
+        msg["Subject"] = ""  # No subject for SMS gateway
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(settings.smtp_email, settings.smtp_password)
+            server.send_message(msg)
+
+        logger.info("Email SMS sent to %s via %s", to_addr, carrier)
+        return True
+    except Exception as e:
+        logger.warning("Email SMS error: %s", e)
+        return False
+
+
 def send_sms(to_phone: str, signals: list) -> bool:
     """Send SMS alert via Twilio. Returns True on success."""
     if not to_phone or not signals:
@@ -127,15 +209,7 @@ def send_sms(to_phone: str, signals: list) -> bool:
         from twilio.rest import Client
         client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
 
-        lines = ["MSE Signal Alert\n"]
-        for s in signals:
-            arrow = "+" if s.action.value == "BUY" else "-"
-            lines.append(f"{arrow} {s.symbol} {s.action.value} ${s.entry:.2f} ({s.confidence*100:.0f}%) R:R {s.rr_ratio:.1f}")
-
-        body = "\n".join(lines)
-        # Twilio SMS max is 1600 chars for long SMS, truncate if needed
-        if len(body) > 1500:
-            body = body[:1497] + "..."
+        body = _format_sms_body(signals)
 
         message = client.messages.create(
             body=body,
@@ -167,6 +241,9 @@ def dispatch_alerts(signals: list) -> dict:
         results["webhook"] = send_webhook(config.webhook_url, config.webhook_platform, filtered)
 
     if config.sms_to and config.sms_consent:
-        results["sms"] = send_sms(config.sms_to, filtered)
+        if config.sms_method == "email_gateway" and config.sms_carrier:
+            results["sms"] = send_email_sms(config.sms_to, config.sms_carrier, filtered)
+        elif config.sms_method == "twilio":
+            results["sms"] = send_sms(config.sms_to, filtered)
 
     return results

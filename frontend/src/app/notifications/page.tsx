@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Bell, Send, Check, AlertCircle, MessageSquare, Smartphone, Zap } from "lucide-react";
+import { Bell, Send, Check, AlertCircle, MessageSquare, Smartphone, Zap, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,8 @@ interface NotificationConfig {
   webhook_url: string;
   webhook_platform: "discord" | "telegram" | "slack";
   sms_to: string;
+  sms_method: "twilio" | "email_gateway";
+  sms_carrier: string;
   sms_consent: boolean;
   sms_consent_timestamp: string;
   auto_alerts_enabled: boolean;
@@ -20,11 +22,29 @@ const DEFAULT_CONFIG: NotificationConfig = {
   webhook_url: "",
   webhook_platform: "discord",
   sms_to: "",
+  sms_method: "email_gateway",
+  sms_carrier: "",
   sms_consent: false,
   sms_consent_timestamp: "",
   auto_alerts_enabled: false,
   min_confidence: 0.6,
 };
+
+const CARRIERS: { key: string; label: string }[] = [
+  { key: "att", label: "AT&T" },
+  { key: "tmobile", label: "T-Mobile" },
+  { key: "verizon", label: "Verizon" },
+  { key: "sprint", label: "Sprint" },
+  { key: "boost", label: "Boost Mobile" },
+  { key: "cricket", label: "Cricket" },
+  { key: "metro", label: "Metro by T-Mobile" },
+  { key: "uscellular", label: "US Cellular" },
+  { key: "virgin", label: "Virgin Mobile" },
+  { key: "google_fi", label: "Google Fi" },
+  { key: "mint", label: "Mint Mobile" },
+  { key: "visible", label: "Visible" },
+  { key: "xfinity", label: "Xfinity Mobile" },
+];
 
 export default function NotificationsPage() {
   const [config, setConfig] = useState<NotificationConfig>(DEFAULT_CONFIG);
@@ -46,6 +66,8 @@ export default function NotificationsPage() {
           webhook_url: data.webhook_url || "",
           webhook_platform: data.webhook_platform || "discord",
           sms_to: data.sms_to || "",
+          sms_method: data.sms_method || "email_gateway",
+          sms_carrier: data.sms_carrier || "",
           sms_consent: data.sms_consent || false,
           sms_consent_timestamp: data.sms_consent_timestamp || "",
           auto_alerts_enabled: data.auto_alerts_enabled || false,
@@ -63,6 +85,8 @@ export default function NotificationsPage() {
         webhook_url: config.webhook_url,
         webhook_platform: config.webhook_platform,
         sms_to: config.sms_to,
+        sms_method: config.sms_method,
+        sms_carrier: config.sms_carrier,
         sms_consent: String(config.sms_consent),
         auto_alerts_enabled: String(config.auto_alerts_enabled),
         min_confidence: String(config.min_confidence),
@@ -285,22 +309,72 @@ export default function NotificationsPage() {
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 space-y-4">
         <div className="flex items-center gap-2">
           <Smartphone className="h-4 w-4 text-emerald-400" />
-          <h2 className="text-sm font-semibold text-zinc-300">SMS Alerts (Twilio)</h2>
+          <h2 className="text-sm font-semibold text-zinc-300">SMS Alerts</h2>
         </div>
 
+        {/* SMS Method Selector */}
+        <div>
+          <label className="mb-1 block text-xs text-zinc-500">Delivery Method</label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setConfig({ ...config, sms_method: "email_gateway" })}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                config.sms_method === "email_gateway"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+              )}
+            >
+              <Mail className="h-3 w-3" />
+              Email Gateway (Free)
+            </button>
+            <button
+              onClick={() => setConfig({ ...config, sms_method: "twilio" })}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                config.sms_method === "twilio"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+              )}
+            >
+              <Smartphone className="h-3 w-3" />
+              Twilio
+            </button>
+          </div>
+        </div>
+
+        {/* Email Gateway: carrier selector */}
+        {config.sms_method === "email_gateway" && (
+          <div>
+            <label className="mb-1 block text-xs text-zinc-500">Your Carrier</label>
+            <select
+              value={config.sms_carrier}
+              onChange={(e) => setConfig({ ...config, sms_carrier: e.target.value })}
+              className="w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-cyan-500 focus:outline-none"
+            >
+              <option value="">Select your carrier...</option>
+              {CARRIERS.map((c) => (
+                <option key={c.key} value={c.key}>{c.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Method description */}
         <p className="text-xs text-zinc-500">
-          Receive text messages when new signals are detected. Requires Twilio credentials configured
-          as environment variables on the server (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER).
+          {config.sms_method === "email_gateway"
+            ? "Sends text messages via your carrier\u2019s email-to-SMS gateway. Free \u2014 just needs a Gmail account with an app password set on the server (SMTP_EMAIL, SMTP_PASSWORD)."
+            : "Sends text messages via Twilio API. Requires TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER on the server."}
         </p>
 
         <div>
           <label className="mb-1 block text-xs text-zinc-500">
-            Your Phone Number (with country code)
+            Your Phone Number {config.sms_method === "email_gateway" ? "(10-digit US number)" : "(with country code)"}
           </label>
           <input
             value={config.sms_to}
             onChange={(e) => setConfig({ ...config, sms_to: e.target.value })}
-            placeholder="+15559876543"
+            placeholder={config.sms_method === "email_gateway" ? "5559876543" : "+15559876543"}
             className="w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:border-cyan-500 focus:outline-none"
           />
         </div>
@@ -331,7 +405,12 @@ export default function NotificationsPage() {
           size="sm"
           variant="outline"
           onClick={testSms}
-          disabled={!config.sms_to || !config.sms_consent || smsTestStatus === "sending"}
+          disabled={
+            !config.sms_to ||
+            !config.sms_consent ||
+            (config.sms_method === "email_gateway" && !config.sms_carrier) ||
+            smsTestStatus === "sending"
+          }
         >
           <Smartphone className="mr-1 h-3 w-3" />
           {smsTestStatus === "sending" ? "Sending..." : "Send Test SMS"}
@@ -339,6 +418,11 @@ export default function NotificationsPage() {
         {!config.sms_consent && config.sms_to && (
           <p className="text-[10px] text-amber-400">
             Please check the consent box above before sending SMS.
+          </p>
+        )}
+        {config.sms_method === "email_gateway" && !config.sms_carrier && config.sms_to && config.sms_consent && (
+          <p className="text-[10px] text-amber-400">
+            Please select your carrier above.
           </p>
         )}
       </div>
@@ -404,7 +488,20 @@ export default function NotificationsPage() {
           </div>
 
           <div>
-            <h3 className="font-semibold text-emerald-300">SMS (Twilio)</h3>
+            <h3 className="font-semibold text-emerald-300">SMS via Email Gateway (Free)</h3>
+            <ol className="ml-4 list-decimal space-y-1">
+              <li>Create a Gmail App Password (Google Account &rarr; Security &rarr; App Passwords)</li>
+              <li>Set these environment variables on your server:</li>
+            </ol>
+            <pre className="mt-1 rounded bg-zinc-800 p-2 text-[10px] text-zinc-400">
+{`SMTP_EMAIL=yourname@gmail.com
+SMTP_PASSWORD=xxxx xxxx xxxx xxxx`}
+            </pre>
+            <p className="mt-1">Select your carrier, enter your 10-digit phone number, and test.</p>
+          </div>
+
+          <div>
+            <h3 className="font-semibold text-emerald-300">SMS via Twilio (Paid)</h3>
             <ol className="ml-4 list-decimal space-y-1">
               <li>Sign up at twilio.com (free trial gives ~$15 credit)</li>
               <li>Get your Account SID, Auth Token, and a phone number</li>
@@ -415,7 +512,6 @@ export default function NotificationsPage() {
 TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_FROM_NUMBER=+15551234567`}
             </pre>
-            <p className="mt-1">Enter your phone number above and click &quot;Send Test SMS&quot; to verify.</p>
           </div>
         </div>
       </div>

@@ -601,7 +601,15 @@ from src.notifications.dispatcher import (
     save_config as save_notification_config,
     NotificationConfig,
     send_sms,
+    send_email_sms,
+    CARRIER_GATEWAYS,
 )
+
+
+@router.get("/notifications/carriers")
+def get_sms_carriers():
+    """List supported carriers for email-to-SMS gateway."""
+    return [{"key": k, "gateway": v} for k, v in CARRIER_GATEWAYS.items()]
 
 
 @router.get("/notifications/config")
@@ -616,6 +624,8 @@ def set_notification_config(
     webhook_url: str = Query(default=""),
     webhook_platform: str = Query(default="discord"),
     sms_to: str = Query(default=""),
+    sms_method: str = Query(default="email_gateway"),
+    sms_carrier: str = Query(default=""),
     sms_consent: bool = Query(default=False),
     auto_alerts_enabled: bool = Query(default=False),
     min_confidence: float = Query(default=0.6, ge=0, le=1),
@@ -636,6 +646,8 @@ def set_notification_config(
         webhook_url=webhook_url,
         webhook_platform=webhook_platform,
         sms_to=sms_to,
+        sms_method=sms_method,
+        sms_carrier=sms_carrier,
         sms_consent=sms_consent,
         sms_consent_timestamp=consent_ts,
         auto_alerts_enabled=auto_alerts_enabled,
@@ -647,9 +659,9 @@ def set_notification_config(
 
 @router.post("/notifications/test-sms")
 def test_sms(
-    to: str = Query(..., description="Recipient phone number with country code, e.g. +15559876543"),
+    to: str = Query(..., description="Recipient phone number, e.g. +15559876543 or 5559876543"),
 ):
-    """Send a test SMS to verify Twilio is configured correctly."""
+    """Send a test SMS via the configured method (Twilio or email gateway)."""
     # Verify consent before sending
     config = load_notification_config()
     if not config.sms_consent:
@@ -671,5 +683,11 @@ def test_sms(
         timestamp=datetime.now(),
     )
 
-    ok = send_sms(to, [test_signal])
+    if config.sms_method == "email_gateway":
+        if not config.sms_carrier:
+            return {"status": "error", "message": "No carrier selected. Choose your carrier and save."}
+        ok = send_email_sms(to, config.sms_carrier, [test_signal])
+    else:
+        ok = send_sms(to, [test_signal])
+
     return {"status": "sent" if ok else "error", "to": to}

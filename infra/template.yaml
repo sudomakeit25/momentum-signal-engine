@@ -1,0 +1,230 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Momentum Signal Engine — Lambda + S3/CloudFront + DynamoDB
+
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+  AlpacaApiKey:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /mse/ALPACA_API_KEY
+  AlpacaSecretKey:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /mse/ALPACA_SECRET_KEY
+  SmtpEmail:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /mse/SMTP_EMAIL
+  SmtpPassword:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /mse/SMTP_PASSWORD
+
+Globals:
+  Function:
+    Timeout: 120
+    MemorySize: 1024
+    Environment:
+      Variables:
+        AWS_LAMBDA: "1"
+        ALPACA_API_KEY: !Ref AlpacaApiKey
+        ALPACA_SECRET_KEY: !Ref AlpacaSecretKey
+        SMTP_EMAIL: !Ref SmtpEmail
+        SMTP_PASSWORD: !Ref SmtpPassword
+        CACHE_BUCKET: !Ref CacheBucket
+        CONFIG_TABLE: !Ref ConfigTable
+        AWS_REGION_OVERRIDE: !Ref AWS::Region
+
+Resources:
+
+  # ==================== DynamoDB ====================
+  ConfigTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub mse-config-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+
+  # ==================== S3 Buckets ====================
+  CacheBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub mse-cache-${Stage}-${AWS::AccountId}
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-cache
+            Status: Enabled
+            ExpirationInDays: 1
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub mse-frontend-${Stage}-${AWS::AccountId}
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${FrontendBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CDN}
+
+  # ==================== Lambda Functions ====================
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub mse-api-${Stage}
+      PackageType: Image
+      ImageConfig:
+        Command: ["src.lambda_handler.handler"]
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api/{proxy+}
+            Method: ANY
+        ApiRoot:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /api
+            Method: ANY
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConfigTable
+        - S3CrudPolicy:
+            BucketName: !Ref CacheBucket
+        - Statement:
+            - Effect: Allow
+              Action: sns:Publish
+              Resource: "*"
+    Metadata:
+      DockerTag: mse-api
+      DockerContext: ../
+      Dockerfile: Dockerfile
+
+  RefreshFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub mse-refresh-${Stage}
+      PackageType: Image
+      ImageConfig:
+        Command: ["src.refresh_handler.handler"]
+      MemorySize: 2048
+      Timeout: 300
+      ReservedConcurrentExecutions: 1
+      Events:
+        Schedule:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: rate(2 minutes)
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConfigTable
+        - S3CrudPolicy:
+            BucketName: !Ref CacheBucket
+        - Statement:
+            - Effect: Allow
+              Action: sns:Publish
+              Resource: "*"
+    Metadata:
+      DockerTag: mse-refresh
+      DockerContext: ../
+      Dockerfile: Dockerfile
+
+  # ==================== API Gateway ====================
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Stage
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - "*"
+
+  # ==================== CloudFront ====================
+  CDN:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Origins:
+          # Frontend (S3)
+          - Id: frontend
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !Ref OAC
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          # API (API Gateway)
+          - Id: api
+            DomainName: !Sub ${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+            OriginPath: !Sub /${Stage}
+        DefaultCacheBehavior:
+          TargetOriginId: frontend
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized
+          Compress: true
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac  # AllViewerExceptHostHeader
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - PATCH
+              - POST
+              - DELETE
+        CustomErrorResponses:
+          # SPA fallback: return index.html for 404s (client-side routing)
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+
+  OAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub mse-oac-${Stage}
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+Outputs:
+  ApiUrl:
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/api
+  CloudFrontUrl:
+    Value: !Sub https://${CDN.DomainName}
+  FrontendBucket:
+    Value: !Ref FrontendBucket
+  CacheBucket:
+    Value: !Ref CacheBucket

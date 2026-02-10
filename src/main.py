@@ -11,6 +11,7 @@ from config.settings import settings
 from src.api.routes import router, _scan_cache, _SCAN_CACHE_TTL
 
 PORT = int(os.environ.get("PORT", 8000))
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("mse")
 
 _REFRESH_INTERVAL = 120  # seconds — match scan cache TTL

@@ -14,11 +14,12 @@ _scan_cache: dict[str, tuple[float, list]] = {}
 _SCAN_CACHE_TTL = 120  # seconds
 
 from src.data.models import (
-    BacktestResult, ChartBar, ChartData, ChartPattern, PositionSize,
-    PriceProjection, ScanResult, Signal, SupportResistanceLevel,
-    TechnicalAnalysis, TrendLine,
+    BacktestResult, ChartBar, ChartData, ChartPattern, IntradayResult,
+    PositionSize, PriceProjection, ScanResult, Signal,
+    SupportResistanceLevel, TechnicalAnalysis, TrendLine,
 )
 from src.risk.position_sizer import calculate_position_size
+from src.scanner.intraday import scan_intraday
 from src.scanner.screener import get_default_universe, scan_universe
 from src.signals.generator import generate_signals
 from src.signals.indicators import add_all_indicators, relative_strength_vs_spy, vwap
@@ -66,6 +67,36 @@ def scan(
     with ThreadPoolExecutor(max_workers=8) as executor:
         executor.map(_enrich, results)
 
+    _scan_cache[cache_key] = (time.time(), results)
+    return results
+
+
+@router.get("/intraday-screener", response_model=list[IntradayResult])
+def intraday_screener(
+    top: int = Query(default=25, ge=1, le=100),
+    min_price: float = Query(default=20.0, ge=0),
+    min_avg_volume: int = Query(default=2_000_000, ge=0),
+    min_change_pct: float = Query(default=2.0, ge=0),
+    min_rvol: float = Query(default=1.5, ge=0),
+):
+    """Intraday movers screen: liquidity + volatility + a trigger.
+
+    5-min bars, today's session only. Rows carry ATR%, time-adjusted RVOL,
+    spread, VWAP distance, and any confirmed setups (range-box breakout,
+    VWAP reclaim/rejection, higher-low continuation) with entry/stop/target.
+    """
+    cache_key = f"intraday_{top}_{min_price}_{min_avg_volume}_{min_change_pct}_{min_rvol}"
+    cached = _scan_cache.get(cache_key)
+    if cached and time.time() - cached[0] < 60:  # shorter TTL: intraday moves fast
+        return cached[1]
+
+    results = scan_intraday(
+        top_n=top,
+        min_price=min_price,
+        min_avg_volume=min_avg_volume,
+        min_change_pct=min_change_pct,
+        min_rvol=min_rvol,
+    )
     _scan_cache[cache_key] = (time.time(), results)
     return results
 

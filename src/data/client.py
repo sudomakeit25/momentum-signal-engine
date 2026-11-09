@@ -79,12 +79,18 @@ def get_multi_bars(
     symbols: list[str],
     timeframe: TimeFrame = TimeFrame.Day,
     days: int = 200,
+    use_cache: bool = True,
 ) -> dict[str, pd.DataFrame]:
-    """Fetch bars for multiple symbols at once."""
+    """Fetch bars for multiple symbols at once.
+
+    use_cache=False skips the shared cache (TTL is minutes — too stale for
+    intraday 5-min bars that feed the intraday screener).
+    """
     cache_key = f"multi_bars_{'_'.join(sorted(symbols))}_{timeframe}_{days}"
-    cached = _cache.get(cache_key)
-    if cached is not None:
-        return cached
+    if use_cache:
+        cached = _cache.get(cache_key)
+        if cached is not None:
+            return cached
 
     start = datetime.now() - timedelta(days=days)
     result: dict[str, pd.DataFrame] = {}
@@ -120,12 +126,12 @@ def get_multi_bars(
         )
         _parse_barset(crypto_client.get_crypto_bars(request).df, crypto_symbols)
 
-    _cache.set(cache_key, result)
-
-    # Seed individual symbol caches so get_bars() hits cache
-    for sym, sym_df in result.items():
-        individual_key = f"bars_{sym}_{timeframe}_{days}"
-        _cache.set(individual_key, sym_df)
+    if use_cache:
+        _cache.set(cache_key, result)
+        # Seed individual symbol caches so get_bars() hits cache
+        for sym, sym_df in result.items():
+            individual_key = f"bars_{sym}_{timeframe}_{days}"
+            _cache.set(individual_key, sym_df)
 
     return result
 

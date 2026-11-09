@@ -94,17 +94,55 @@ def handler(event, context):
             all_signals.extend(r.signals)
         logger.info("Signal check: %d total signals from %d results", len(all_signals), len(results))
 
+        # Intraday movers screen (market hours only): range breaks, VWAP
+        # reclaims/rejections, higher lows — deduped once per setup per day.
+        from datetime import datetime
+
+        from src.scanner.intraday import ET, is_market_hours, scan_intraday
+
+        intraday_signals = []
+        intraday_keys: set = set()
+        today_et = datetime.now(tz=ET).date().isoformat()
+        try:
+            if is_market_hours():
+                intraday_results = scan_intraday()
+                cache.set("intraday_scan", intraday_results)
+                for r in intraday_results:
+                    intraday_signals.extend(r.signals)
+                intraday_keys = {
+                    f"I:{today_et}:{s.symbol}:{s.setup_type.value}:{s.action.value}"
+                    for s in intraday_signals
+                }
+                logger.info(
+                    "Intraday screen: %d movers, %d setups",
+                    len(intraday_results), len(intraday_signals),
+                )
+        except Exception as e:
+            logger.warning("Intraday screen failed: %s", e)
+
         # Load previously seen keys from S3
         seen_keys = _load_seen_keys(bucket, region)
-        current_keys = {f"{s.symbol}:{s.action.value}:{s.entry:.2f}" for s in all_signals}
+        daily_keys = {f"{s.symbol}:{s.action.value}:{s.entry:.2f}" for s in all_signals}
+        current_keys = daily_keys | intraday_keys
+        # Keep today's already-seen intraday keys so a setup stays deduped
+        # even if it drops out of a later scan cycle
+        current_keys |= {
+            k for k in seen_keys
+            if isinstance(k, str) and k.startswith(f"I:{today_et}:")
+        }
 
         if not seen_keys:
             # First invocation — treat all as new
-            new_signals = all_signals
+            new_signals = all_signals + intraday_signals
             logger.info("First invocation: treating all %d signals as new", len(new_signals))
         else:
             new_signals = [s for s in all_signals
                            if f"{s.symbol}:{s.action.value}:{s.entry:.2f}" not in seen_keys]
+            new_signals += [
+                s for s in intraday_signals
+                if f"I:{today_et}:{s.symbol}:{s.setup_type.value}:{s.action.value}"
+                not in seen_keys
+            ]
 
         # Dispatch alerts for new signals
         if new_signals:
@@ -126,6 +164,7 @@ def handler(event, context):
             "body": json.dumps({
                 "results": len(results),
                 "signals": len(all_signals),
+                "intraday_signals": len(intraday_signals),
                 "new_signals": len(new_signals),
             }),
         }

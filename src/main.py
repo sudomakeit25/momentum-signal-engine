@@ -40,8 +40,13 @@ def _refresh_loop():
     from concurrent.futures import ThreadPoolExecutor
     from src.notifications.dispatcher import dispatch_alerts
 
+    from datetime import datetime
+
+    from src.scanner.intraday import ET, is_market_hours, scan_intraday
+
     symbols = get_default_universe()
     _seen_signal_keys: set[str] = set()
+    _seen_intraday_keys: set[str] = set()
     _first_cycle = True
 
     while not _stop_event.is_set():
@@ -90,6 +95,30 @@ def _refresh_loop():
             else:
                 new_signals = [s for s in all_signals
                                if f"{s.symbol}:{s.action.value}:{s.entry:.2f}" not in _seen_signal_keys]
+
+            # --- Intraday movers screen (market hours only) ---
+            # Deduped once per symbol+setup+direction per day, so an alert
+            # fires when a range break / VWAP reclaim / higher low confirms.
+            try:
+                if is_market_hours():
+                    today_et = datetime.now(tz=ET).date().isoformat()
+                    # Drop keys from previous days
+                    _seen_intraday_keys = {
+                        k for k in _seen_intraday_keys if k.startswith(f"I:{today_et}:")
+                    }
+                    intraday_results = scan_intraday()
+                    _scan_cache["intraday_bg"] = (time.time(), intraday_results)
+                    for r in intraday_results:
+                        for s in r.signals:
+                            ikey = (
+                                f"I:{today_et}:{s.symbol}:"
+                                f"{s.setup_type.value}:{s.action.value}"
+                            )
+                            if ikey not in _seen_intraday_keys:
+                                _seen_intraday_keys.add(ikey)
+                                new_signals.append(s)
+            except Exception as e:
+                logger.warning("Intraday screen failed: %s", e)
 
             if new_signals:
                 logger.info("Dispatching %d new signals...", len(new_signals))

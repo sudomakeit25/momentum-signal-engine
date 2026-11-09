@@ -26,11 +26,13 @@ import {
   ShieldAlert,
   Calendar,
   Send,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/scanner", label: "Scanner", icon: ScanSearch },
+  { href: "/intraday", label: "Intraday", icon: Zap },
   { href: "/watchlist", label: "Watchlist", icon: Eye },
   { href: "/chart/SPY", label: "Charts", icon: CandlestickChart },
   { href: "/portfolio", label: "Portfolio", icon: Wallet },
